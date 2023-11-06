@@ -1,205 +1,177 @@
-import functools
-
-from dm_control import composer
-from dm_control.composer.variation import distributions
-from dm_control.locomotion.arenas import corridors as corr_arenas
-from dm_control.locomotion.arenas import floors
-from dm_control.locomotion.arenas import labmaze_textures
-from dm_control.locomotion.arenas import mazes
-from dm_control.locomotion.props import target_sphere
-from dm_control.locomotion.tasks import corridors as corr_tasks
-from dm_control.locomotion.tasks import go_to_target
-from dm_control.locomotion.tasks import random_goal_maze
-from dm_control.locomotion.walkers import cmu_humanoid
-from labmaze import fixed_maze
+from gym import core, spaces
+from dm_control import suite
+from dm_env import specs
+import numpy as np
 
 
-def cmu_humanoid_run_walls(random_state=None):
-  """Requires a CMU humanoid to run down a corridor obstructed by walls."""
+def _spec_to_box(spec, dtype):
+    def extract_min_max(s):
+        assert s.dtype == np.float64 or s.dtype == np.float32
+        dim = np.int(np.prod(s.shape))
+        if type(s) == specs.Array:
+            bound = np.inf * np.ones(dim, dtype=np.float32)
+            return -bound, bound
+        elif type(s) == specs.BoundedArray:
+            zeros = np.zeros(dim, dtype=np.float32)
+            return s.minimum + zeros, s.maximum + zeros
 
-  # Build a position-controlled CMU humanoid walker.
-  walker = cmu_humanoid.CMUHumanoidPositionControlled(
-      observable_options={'egocentric_camera': dict(enabled=True)})
-
-  # Build a corridor-shaped arena that is obstructed by walls.
-  arena = corr_arenas.WallsCorridor(
-      wall_gap=4.,
-      wall_width=distributions.Uniform(1, 7),
-      wall_height=3.0,
-      corridor_width=10,
-      corridor_length=100,
-      include_initial_padding=False)
-
-  # Build a task that rewards the agent for running down the corridor at a
-  # specific velocity.
-  task = corr_tasks.RunThroughCorridor(
-      walker=walker,
-      arena=arena,
-      walker_spawn_position=(0.5, 0, 0),
-      target_velocity=3.0,
-      physics_timestep=0.005,
-      control_timestep=0.03)
-
-  return composer.Environment(time_limit=30,
-                              task=task,
-                              random_state=random_state,
-                              strip_singleton_obs_buffer_dim=True)
+    mins, maxs = [], []
+    for s in spec:
+        mn, mx = extract_min_max(s)
+        mins.append(mn)
+        maxs.append(mx)
+    low = np.concatenate(mins, axis=0).astype(dtype)
+    high = np.concatenate(maxs, axis=0).astype(dtype)
+    assert low.shape == high.shape
+    return spaces.Box(low, high, dtype=dtype)
 
 
-def cmu_humanoid_run_gaps(random_state=None):
-  """Requires a CMU humanoid to run down a corridor with gaps."""
-
-  # Build a position-controlled CMU humanoid walker.
-  walker = cmu_humanoid.CMUHumanoidPositionControlled(
-      observable_options={'egocentric_camera': dict(enabled=True)})
-
-  # Build a corridor-shaped arena with gaps, where the sizes of the gaps and
-  # platforms are uniformly randomized.
-  arena = corr_arenas.GapsCorridor(
-      platform_length=distributions.Uniform(.3, 2.5),
-      gap_length=distributions.Uniform(.5, 1.25),
-      corridor_width=10,
-      corridor_length=100)
-
-  # Build a task that rewards the agent for running down the corridor at a
-  # specific velocity.
-  task = corr_tasks.RunThroughCorridor(
-      walker=walker,
-      arena=arena,
-      walker_spawn_position=(0.5, 0, 0),
-      target_velocity=3.0,
-      physics_timestep=0.005,
-      control_timestep=0.03)
-
-  return composer.Environment(time_limit=30,
-                              task=task,
-                              random_state=random_state,
-                              strip_singleton_obs_buffer_dim=True)
+def _flatten_obs(obs):
+    obs_pieces = []
+    for v in obs.values():
+        flat = np.array([v]) if np.isscalar(v) else v.ravel()
+        obs_pieces.append(flat)
+    return np.concatenate(obs_pieces, axis=0)
 
 
-def cmu_humanoid_go_to_target(random_state=None):
-  """Requires a CMU humanoid to go to a target."""
+class DMCWrapper(core.Env):
+    def __init__(
+        self,
+        domain_name,
+        task_name,
+        task_kwargs=None,
+        visualize_reward={},
+        from_pixels=False,
+        height=84,
+        width=84,
+        camera_id=0,
+        frame_skip=1,
+        environment_kwargs=None,
+        channels_first=True
+    ):
+        assert 'random' in task_kwargs, 'please specify a seed, for deterministic behaviour'
+        self._from_pixels = from_pixels
+        self._height = height
+        self._width = width
+        self._camera_id = camera_id
+        self._frame_skip = frame_skip
+        self._channels_first = channels_first
 
-  # Build a position-controlled CMU humanoid walker.
-  walker = cmu_humanoid.CMUHumanoidPositionControlled()
+        # create task
+        self._env = suite.load(
+            domain_name=domain_name,
+            task_name=task_name,
+            task_kwargs=task_kwargs,
+            visualize_reward=visualize_reward,
+            environment_kwargs=environment_kwargs
+        )
 
-  # Build a standard floor arena.
-  arena = floors.Floor()
+        # true and normalized action spaces
+        self._true_action_space = _spec_to_box([self._env.action_spec()], np.float32)
+        self._norm_action_space = spaces.Box(
+            low=-1.0,
+            high=1.0,
+            shape=self._true_action_space.shape,
+            dtype=np.float32
+        )
 
-  # Build a task that rewards the agent for going to a target.
-  task = go_to_target.GoToTarget(
-      walker=walker,
-      arena=arena,
-      physics_timestep=0.005,
-      control_timestep=0.03)
+        # create observation space
+        if from_pixels:
+            shape = [3, height, width] if channels_first else [height, width, 3]
+            self._observation_space = spaces.Box(
+                low=0, high=255, shape=shape, dtype=np.uint8
+            )
+        else:
+            self._observation_space = _spec_to_box(
+                self._env.observation_spec().values(),
+                np.float64
+            )
+            
+        self._state_space = _spec_to_box(
+            self._env.observation_spec().values(),
+            np.float64
+        )
+        
+        self.current_state = None
 
-  return composer.Environment(time_limit=30,
-                              task=task,
-                              random_state=random_state,
-                              strip_singleton_obs_buffer_dim=True)
+        # set seed
+        self.seed(seed=task_kwargs.get('random', 1))
 
+    def __getattr__(self, name):
+        return getattr(self._env, name)
 
-def cmu_humanoid_maze_forage(random_state=None):
-  """Requires a CMU humanoid to find all items in a maze."""
+    def _get_obs(self, time_step):
+        if self._from_pixels:
+            obs = self.render(
+                height=self._height,
+                width=self._width,
+                camera_id=self._camera_id
+            )
+            if self._channels_first:
+                obs = obs.transpose(2, 0, 1).copy()
+        else:
+            obs = _flatten_obs(time_step.observation)
+        return obs
 
-  # Build a position-controlled CMU humanoid walker.
-  walker = cmu_humanoid.CMUHumanoidPositionControlled(
-      observable_options={'egocentric_camera': dict(enabled=True)})
+    def _convert_action(self, action):
+        action = action.astype(np.float64)
+        true_delta = self._true_action_space.high - self._true_action_space.low
+        norm_delta = self._norm_action_space.high - self._norm_action_space.low
+        action = (action - self._norm_action_space.low) / norm_delta
+        action = action * true_delta + self._true_action_space.low
+        action = action.astype(np.float32)
+        return action
 
-  # Build a maze with rooms and targets.
-  skybox_texture = labmaze_textures.SkyBox(style='sky_03')
-  wall_textures = labmaze_textures.WallTextures(style='style_01')
-  floor_textures = labmaze_textures.FloorTextures(style='style_01')
-  arena = mazes.RandomMazeWithTargets(
-      x_cells=11,
-      y_cells=11,
-      xy_scale=3,
-      max_rooms=4,
-      room_min_size=4,
-      room_max_size=5,
-      spawns_per_room=1,
-      targets_per_room=3,
-      skybox_texture=skybox_texture,
-      wall_textures=wall_textures,
-      floor_textures=floor_textures,
-  )
+    @property
+    def observation_space(self):
+        return self._observation_space
 
-  # Build a task that rewards the agent for obtaining targets.
-  task = random_goal_maze.ManyGoalsMaze(
-      walker=walker,
-      maze_arena=arena,
-      target_builder=functools.partial(
-          target_sphere.TargetSphere,
-          radius=0.4,
-          rgb1=(0, 0, 0.4),
-          rgb2=(0, 0, 0.7)),
-      target_reward_scale=50.,
-      physics_timestep=0.005,
-      control_timestep=0.03,
-  )
+    @property
+    def state_space(self):
+        return self._state_space
 
-  return composer.Environment(time_limit=30,
-                              task=task,
-                              random_state=random_state,
-                              strip_singleton_obs_buffer_dim=True)
+    @property
+    def action_space(self):
+        return self._norm_action_space
 
+    @property
+    def reward_range(self):
+        return 0, self._frame_skip
 
-def cmu_humanoid_heterogeneous_forage(random_state=None):
-  """Requires a CMU humanoid to find all items of a particular type in a maze."""
-  level = ('*******\n'
-           '*     *\n'
-           '*  P  *\n'
-           '*     *\n'
-           '*  G  *\n'
-           '*     *\n'
-           '*******\n')
+    def seed(self, seed):
+        self._true_action_space.seed(seed)
+        self._norm_action_space.seed(seed)
+        self._observation_space.seed(seed)
 
-  # Build a position-controlled CMU humanoid walker.
-  walker = cmu_humanoid.CMUHumanoidPositionControlled(
-      observable_options={'egocentric_camera': dict(enabled=True)})
+    def step(self, action):
+        assert self._norm_action_space.contains(action)
+        action = self._convert_action(action)
+        assert self._true_action_space.contains(action)
+        reward = 0
+        extra = {'internal_state': self._env.physics.get_state().copy()}
 
-  skybox_texture = labmaze_textures.SkyBox(style='sky_03')
-  wall_textures = labmaze_textures.WallTextures(style='style_01')
-  floor_textures = labmaze_textures.FloorTextures(style='style_01')
-  maze = fixed_maze.FixedMazeWithRandomGoals(
-      entity_layer=level,
-      variations_layer=None,
-      num_spawns=1,
-      num_objects=6,
-  )
-  arena = mazes.MazeWithTargets(
-      maze=maze,
-      xy_scale=3.0,
-      z_height=2.0,
-      skybox_texture=skybox_texture,
-      wall_textures=wall_textures,
-      floor_textures=floor_textures,
-  )
-  task = random_goal_maze.ManyHeterogeneousGoalsMaze(
-      walker=walker,
-      maze_arena=arena,
-      target_builders=[
-          functools.partial(
-              target_sphere.TargetSphere,
-              radius=0.4,
-              rgb1=(0, 0.4, 0),
-              rgb2=(0, 0.7, 0)),
-          functools.partial(
-              target_sphere.TargetSphere,
-              radius=0.4,
-              rgb1=(0.4, 0, 0),
-              rgb2=(0.7, 0, 0)),
-      ],
-      randomize_spawn_rotation=False,
-      target_type_rewards=[30., -10.],
-      target_type_proportions=[1, 1],
-      shuffle_target_builders=True,
-      aliveness_reward=0.01,
-      control_timestep=.03,
-  )
+        for _ in range(self._frame_skip):
+            time_step = self._env.step(action)
+            reward += time_step.reward or 0
+            done = time_step.last()
+            if done:
+                break
+        obs = self._get_obs(time_step)
+        self.current_state = _flatten_obs(time_step.observation)
+        extra['discount'] = time_step.discount
+        return obs, reward, done, extra
 
-  return composer.Environment(
-      time_limit=25,
-      task=task,
-      random_state=random_state,
-      strip_singleton_obs_buffer_dim=True)
+    def reset(self):
+        time_step = self._env.reset()
+        self.current_state = _flatten_obs(time_step.observation)
+        obs = self._get_obs(time_step)
+        return obs
+
+    def render(self, mode='rgb_array', height=None, width=None, camera_id=0):
+        assert mode == 'rgb_array', 'only support rgb_array mode, given %s' % mode
+        height = height or self._height
+        width = width or self._width
+        camera_id = camera_id or self._camera_id
+        return self._env.physics.render(
+            height=height, width=width, camera_id=camera_id
+        )

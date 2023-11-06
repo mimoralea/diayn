@@ -13,6 +13,18 @@
             ],
             "console": "integratedTerminal",
             "justMyCode": false
+        },
+        {
+            "name": "Task",
+            "type": "python",
+            "request": "launch",
+            "program": "diayn/task.py",
+            "args": [
+                "standup", // "walk", "run", or "standup"
+                "--visualize"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
         }
     ]
 }
