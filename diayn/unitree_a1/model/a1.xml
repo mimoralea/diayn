@@ -1,7 +1,7 @@
 <mujoco model="a1">
-  <include file="./a1_scene/visual.xml"/>
-  <include file="./a1_scene/skybox.xml"/>
-  <include file="./a1_scene/materials.xml"/>
+  <include file="./scene/visual.xml"/>
+  <include file="./scene/skybox.xml"/>
+  <include file="./scene/materials.xml"/>
 
   <compiler angle="radian" meshdir="a1_assets" texturedir="a1_assets" autolimits="true"/>
 

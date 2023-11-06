@@ -37,7 +37,6 @@ def _flatten_obs(obs):
 class DMCWrapper(core.Env):
     def __init__(
         self,
-        domain_name,
         task_name,
         task_kwargs=None,
         visualize_reward={},
@@ -58,13 +57,7 @@ class DMCWrapper(core.Env):
         self._channels_first = channels_first
 
         # create task
-        self._env = suite.load(
-            domain_name=domain_name,
-            task_name=task_name,
-            task_kwargs=task_kwargs,
-            visualize_reward=visualize_reward,
-            environment_kwargs=environment_kwargs
-        )
+        self._env = 
 
         # true and normalized action spaces
         self._true_action_space = _spec_to_box([self._env.action_spec()], np.float32)
@@ -175,3 +168,48 @@ class DMCWrapper(core.Env):
         return self._env.physics.render(
             height=height, width=width, camera_id=camera_id
         )
+
+def main():
+  import argparse
+  parser = argparse.ArgumentParser(description='Test a given task.')
+  parser.add_argument('task', type=str, help='Task to test: `walk`, `run`, or `standup`', default='standup')
+  parser.add_argument('--visualize', action='store_true', help='Visualize at the end if set')
+  args = parser.parse_args()
+
+  env_fn = None
+  if args.task.lower() == 'walk':
+    env_fn = walk
+  elif args.task.lower() == 'run':
+    env_fn = run
+  elif args.task.lower() == 'standup':
+    env_fn = standup
+  else:
+    NotImplementedError(f"Unknown task: {args.task}")
+
+  env = env_fn()
+  action_spec = env.action_spec()
+  min_action = action_spec.minimum
+  max_action = action_spec.maximum
+  def random_policy(_):
+    return np.random.uniform(
+      min_action,
+      max_action
+    )
+
+  time_step = env.reset()
+  while not time_step.last():
+    action = np.random.uniform(action_spec.minimum, action_spec.maximum,
+                              size=action_spec.shape)
+    time_step = env.step(action)
+    # print("reward = {}, discount = {}, observations = {}.".format(
+    #     time_step.reward, time_step.discount, time_step.observation))
+    print("reward = {}, discount = {}.".format(
+        time_step.reward, time_step.discount))
+
+  if args.visualize:
+    del env
+    from dm_control import viewer
+    viewer.launch(environment_loader=env_fn, policy=random_policy)
+
+if __name__ == "__main__":
+  main()

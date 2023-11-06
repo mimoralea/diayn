@@ -19,10 +19,10 @@
             "type": "python",
             "request": "launch",
             "program": "diayn/task.py",
-            "args": [
-                "standup", // "walk", "run", or "standup"
-                "--visualize"
-            ],
+            // "args": [
+            //     "zero", // "zero", "still", "slow", or "fast"
+            //     // "--visualize"
+            // ],
             "console": "integratedTerminal",
             "justMyCode": false
         }
