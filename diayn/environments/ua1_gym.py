@@ -1,13 +1,12 @@
 import gym
 from dm_env import specs
-from diayn.environments.dmc import ALL_DMC_ENVS
-from gym import spaces
+from diayn.environments.ua1_dmc import ALL_DMC_ENVS
 
 
 def convert_dm_control_to_gym_space(dm_control_space):
     r"""Convert dm_control space to gym space."""
     if isinstance(dm_control_space, specs.BoundedArray):
-        space = spaces.Box(
+        space = gym.spaces.Box(
             low=dm_control_space.minimum,
             high=dm_control_space.maximum,
             dtype=dm_control_space.dtype,
@@ -17,7 +16,7 @@ def convert_dm_control_to_gym_space(dm_control_space):
     elif isinstance(dm_control_space, specs.Array) and not isinstance(
         dm_control_space, specs.BoundedArray
     ):
-        space = spaces.Box(
+        space = gym.spaces.Box(
             low=-float("inf"),
             high=float("inf"),
             shape=dm_control_space.shape,
@@ -25,13 +24,15 @@ def convert_dm_control_to_gym_space(dm_control_space):
         )
         return space
     elif isinstance(dm_control_space, dict):
-        space = spaces.Dict(
+        space = gym.spaces.Dict(
             {
                 key: convert_dm_control_to_gym_space(value)
                 for key, value in dm_control_space.items()
             }
         )
-        return space
+        # TODO: Fix this hacky way to get the observation
+        assert "observations" in space.spaces, "'observations' must be present in Dict space, not other structure supported"
+        return space["observations"]
 
 
 class DMSuiteEnv(gym.Env):
@@ -53,7 +54,8 @@ class DMSuiteEnv(gym.Env):
 
     def step(self, action):
         timestep = self.env.step(action)
-        observation = timestep.observation
+        # TODO: Fix this hacky way to get the observation
+        observation = timestep.observation["observations"]
         reward = timestep.reward
         done = timestep.last()
         info = {}
@@ -61,7 +63,8 @@ class DMSuiteEnv(gym.Env):
 
     def reset(self):
         timestep = self.env.reset()
-        return timestep.observation
+        # TODO: Fix this hacky way to get the observation
+        return timestep.observation["observations"]
 
     def render(self, mode="human", **kwargs):
         if "camera_id" not in kwargs:
@@ -78,7 +81,7 @@ class DMSuiteEnv(gym.Env):
 
                     self.viewer = rendering.SimpleImageViewer(maxwidth=1024)
                 else:
-                    from utils import OpenCVImageViewer
+                    from diayn.utils import OpenCVImageViewer
 
                     self.viewer = OpenCVImageViewer()
             self.viewer.imshow(img)

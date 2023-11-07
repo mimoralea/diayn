@@ -10,6 +10,10 @@
             "request": "launch",
             "program": "diayn/main.py",
             "args": [
+                // "--env_id", "UA1None-v0",
+                // "--env_id", "UA1Still-v0",
+                "--env_id", "UA1Slow-v0",
+                // "--env_id", "UA1Fast-v0",
             ],
             "console": "integratedTerminal",
             "justMyCode": false
@@ -18,10 +22,10 @@
             "name": "DMC Environment",
             "type": "python",
             "request": "launch",
-            "program": "diayn/dmc_environment.py",
+            "program": "diayn/environments/ua1_dmc.py",
             "args": [
-                "--task", "none", // "none", "still", "slow", or "fast"
-                // "--render"
+                "--task", "fast", // "none", "still", "slow", or "fast"
+                "--render"
             ],
             "console": "integratedTerminal",
             "justMyCode": false
@@ -30,10 +34,10 @@
             "name": "Gym Environment",
             "type": "python",
             "request": "launch",
-            "program": "diayn/gym_environment.py",
+            "program": "diayn/environments/ua1_gym.py",
             "args": [
-                "--task", "none", // "none", "still", "slow", or "fast"
-                // "--render"
+                "--task", "fast", // "none", "still", "slow", or "fast"
+                "--render"
             ],
             "console": "integratedTerminal",
             "justMyCode": false

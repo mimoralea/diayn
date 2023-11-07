@@ -1,51 +1,41 @@
 import argparse
-
+import os
 import gym
-from diayn.environments import diayn
+import torch
 
-
-def main(task="none"):
-    # Create the Gym environment based on the task string
-    env = gym.make(task)
-
-    # Set the number of episodes to run
-    num_episodes = 10
-
-    # Run the reinforcement learning loop for the specified number of episodes
-    for i in range(num_episodes):
-        # Reset the environment for each episode
-        obs = env.reset()
-        done = False
-        total_reward = 0
-
-        # Run the episode until termination
-        while not done:
-            # Choose a random action
-            action = env.action_space.sample()
-
-            # Take the chosen action and observe the next state and reward
-            obs, reward, done, info = env.step(action)
-
-            # Update the total reward for the episode
-            total_reward += reward
-
-        # Print the total reward for the episode
-        print(f"Task: {task}, Episode {i+1}: Total reward = {total_reward}")
-
+import diayn
+from diayn.spinningup.spinup.algos.pytorch.sac.sac import core, sac
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Run SAC on the Unitree A1 Gym environment."
     )
     parser.add_argument(
-        "--task",
+        "--env_id",
         type=str,
-        default="none",
+        default="UA1Still-v0",
         help="The name of task to train on.",
     )
+    parser.add_argument("--hid", type=int, default=256)
+    parser.add_argument("--l", type=int, default=2)
+    parser.add_argument("--gamma", type=float, default=0.99)
+    parser.add_argument("--seed", "-s", type=int, default=0)
+    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--exp_name", type=str, default="sac")
     args = parser.parse_args()
 
-    main(args.task)
+    from diayn.spinningup.spinup.utils.run_utils import setup_logger_kwargs
 
-if __name__ == "__main__":
-    main()
+    data_dir = os.path.join(diayn.__path__[0], "..", "data")
+    logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed, data_dir)
+
+    torch.set_num_threads(torch.get_num_threads())
+    sac(
+        lambda: gym.make(args.env_id),
+        actor_critic=core.MLPActorCritic,
+        ac_kwargs=dict(hidden_sizes=[args.hid] * args.l),
+        gamma=args.gamma,
+        seed=args.seed,
+        epochs=args.epochs,
+        logger_kwargs=logger_kwargs,
+    )

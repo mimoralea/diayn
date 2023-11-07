@@ -60,5 +60,8 @@ pip install dm_control==1.0.15
 pip install pip==22.0.4 setuptools==59.8.0 wheel==0.37.1
 pip install gym==0.21
 pip install "opencv-python>=3"
+pip install -e .
+python3 -m pip install --upgrade https://storage.googleapis.com/tensorflow/mac/cpu/tensorflow-1.12.0-py3-none-any.whl
+pip install joblib
+mamba install mpi4py
 ```
-

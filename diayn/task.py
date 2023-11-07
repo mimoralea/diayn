@@ -1,5 +1,4 @@
 import collections
-from enum import Enum
 
 import numpy as np
 from dm_control.suite import base

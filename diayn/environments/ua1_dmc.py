@@ -1,8 +1,8 @@
 import numpy as np
 from dm_control.rl import control
-from physics import Physics
-from task import TASK_TYPE_TO_MOVE_SPEED, Move
-from utils import get_model_and_assets
+from diayn.physics import Physics
+from diayn.task import TASK_TYPE_TO_MOVE_SPEED, Move
+from diayn.utils import get_model_and_assets
 
 
 def _dmc_env_creator(
@@ -22,6 +22,7 @@ def _dmc_env_creator(
         task,
         time_limit=time_limit,
         control_timestep=control_timestep,
+        flat_observation=True,
         **environment_kwargs,
     )
 
