@@ -7,63 +7,65 @@ from dm_control.utils import rewards
 
 _STAND_HEIGHT = 1.2
 
-TASK_TYPE_TO_MOVE_SPEED = {
-  "none": -1,
-  "still": 0,
-  "slow": 2,
-  "fast": 8
-}
+TASK_TYPE_TO_MOVE_SPEED = {"none": -1, "still": 0, "slow": 2, "fast": 8}
+
 
 class Move(base.Task):
+    def __init__(self, task_type, pure_state_observations=False, random=None):
+        self._target_mode_speed = TASK_TYPE_TO_MOVE_SPEED[task_type]
+        self._pure_state_observations = pure_state_observations
+        super().__init__(random=random)
 
-  def __init__(self, task_type, pure_state_observations=False, random=None):
-    self._target_mode_speed = TASK_TYPE_TO_MOVE_SPEED[task_type]
-    self._pure_state_observations = pure_state_observations
-    super().__init__(random=random)
+    def initialize_episode(self, physics):
+        orientation = self.random.randn(4)
+        orientation /= np.linalg.norm(orientation)
+        super().initialize_episode(physics)
 
-  def initialize_episode(self, physics):
-    orientation = self.random.randn(4)
-    orientation /= np.linalg.norm(orientation)
-    super().initialize_episode(physics)
+    def get_observation(self, physics):
+        obs = collections.OrderedDict()
+        if self._pure_state_observations:
+            obs["position"] = physics.position()
+            obs["velocity"] = physics.velocity()
+        else:
+            obs["trunk_upright"] = physics.trunk_upright()
+            obs["joint_angles"] = physics.joint_angles()
+            obs["trunk_vertical"] = physics.trunk_vertical_orientation()
+            obs["com_position"] = physics.center_of_mass_position()
+            obs["com_velocity"] = physics.center_of_mass_velocity()
+            obs["velocity"] = physics.velocity()
 
-  def get_observation(self, physics):
-    obs = collections.OrderedDict()
-    if self._pure_state_observations:
-        obs['position'] = physics.position()
-        obs['velocity'] = physics.velocity()
-    else:
-        obs['trunk_upright'] = physics.trunk_upright()
-        obs['joint_angles'] = physics.joint_angles()
-        obs['trunk_vertical'] = physics.trunk_vertical_orientation()
-        obs['com_position'] = physics.center_of_mass_position()
-        obs['com_velocity'] = physics.center_of_mass_velocity()
-        obs['velocity'] = physics.velocity()
+        return obs
 
-    return obs
+    def get_reward(self, physics):
+        if self._target_mode_speed == -1:
+            return 0.0
 
-  def get_reward(self, physics):
+        standing = rewards.tolerance(
+            physics.trunk_height(),
+            bounds=(_STAND_HEIGHT, float("inf")),
+            margin=_STAND_HEIGHT / 2,
+        )
+        upright = rewards.tolerance(
+            physics.trunk_upright(),
+            bounds=(0.9, float("inf")),
+            sigmoid="linear",
+            margin=1.9,
+            value_at_margin=0,
+        )
+        stand_reward = (3 * standing + upright) / 4
 
-    if self._target_mode_speed == -1:
-      return 0.0
+        if self._target_mode_speed == 0:
+            horizontal_velocity = physics.center_of_mass_velocity()[[0, 1]]
+            dont_move = rewards.tolerance(horizontal_velocity, margin=2).mean()
+            return stand_reward * dont_move
 
-    standing = rewards.tolerance(physics.trunk_height(),
-                                 bounds=(_STAND_HEIGHT, float('inf')),
-                                 margin=_STAND_HEIGHT/2)
-    upright = rewards.tolerance(physics.trunk_upright(),
-                                bounds=(0.9, float('inf')), sigmoid='linear',
-                                margin=1.9, value_at_margin=0)
-    stand_reward = (3*standing + upright) / 4
+        else:
+            move_reward = rewards.tolerance(
+                physics.horizontal_velocity(),
+                bounds=(self._target_mode_speed, float("inf")),
+                margin=self._target_mode_speed / 2,
+                value_at_margin=0.5,
+                sigmoid="linear",
+            )
 
-    if self._target_mode_speed == 0:
-      horizontal_velocity = physics.center_of_mass_velocity()[[0, 1]]
-      dont_move = rewards.tolerance(horizontal_velocity, margin=2).mean()
-      return stand_reward * dont_move
-
-    else:
-      move_reward = rewards.tolerance(physics.horizontal_velocity(),
-                                      bounds=(self._target_mode_speed, float('inf')),
-                                      margin=self._target_mode_speed/2,
-                                      value_at_margin=0.5,
-                                      sigmoid='linear')
-
-      return stand_reward * (5*move_reward + 1) / 6
+            return stand_reward * (5 * move_reward + 1) / 6

@@ -1,8 +1,8 @@
 import os
-from dm_control.utils import io as resources
-import cv2
 import uuid
 
+import cv2
+from dm_control.utils import io as resources
 from lxml import etree
 
 _UNITREE_A1 = os.path.join(os.path.dirname(__file__), "unitree_a1")
@@ -17,24 +17,25 @@ _FILENAMES = [
 
 
 _ALL_ASSETS = {
-  filename: resources.GetResource(os.path.join(_SCENE_DIR, filename))
-          for filename in _FILENAMES
+    filename: resources.GetResource(os.path.join(_SCENE_DIR, filename))
+    for filename in _FILENAMES
 }
 
 _, _, filenames = next(resources.WalkResources(_ASSET_DIR))
 for filename in filenames:
     _ALL_ASSETS[filename] = resources.GetResource(os.path.join(_ASSET_DIR, filename))
 
+
 def get_model_and_assets(model_filename="a1.xml"):
-  """Reads a model XML file and returns its contents as a string."""
-  
-  xml_string = resources.GetResource(os.path.join(_MODEL_DIR, model_filename))
-  parser = etree.XMLParser(remove_blank_text=True)
-  mjcf = etree.XML(xml_string, parser)
-  return etree.tostring(mjcf, pretty_print=True), _ALL_ASSETS
+    """Reads a model XML file and returns its contents as a string."""
+
+    xml_string = resources.GetResource(os.path.join(_MODEL_DIR, model_filename))
+    parser = etree.XMLParser(remove_blank_text=True)
+    mjcf = etree.XML(xml_string, parser)
+    return etree.tostring(mjcf, pretty_print=True), _ALL_ASSETS
 
 
-class OpenCVImageViewer():
+class OpenCVImageViewer:
     """A simple OpenCV highgui based dm_control image viewer
 
     This class is meant to be a drop-in replacement for
