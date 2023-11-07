@@ -1,10 +1,7 @@
 import gym
 from gym import spaces
-import numpy as np
-
-from dm_control import suite
 from dm_env import specs
-from task import ALL_TASKS
+from dmc_environment import ALL_DMC_ENVS
 
 
 def convert_dm_control_to_gym_space(dm_control_space):
@@ -78,26 +75,26 @@ class DMSuiteEnv(gym.Env):
             self.viewer = None
         return self.env.close()
 
-ALL_ENVS = {}
-for name, task in ALL_TASKS.items():
-    ALL_ENVS[f'UA1{name.capitalize()}-v0'] = lambda **kwargs: DMSuiteEnv(task, **kwargs)
+ALL_GYM_ENVS = {}
+for name, dmc_env in ALL_DMC_ENVS.items():
+    ALL_GYM_ENVS[name] = lambda de=dmc_env, **kwargs: DMSuiteEnv(de, **kwargs)
 
 def main():
   import argparse
   parser = argparse.ArgumentParser(description='Test a given environment.')
-  parser.add_argument('--env_id', type=str, help='Unitree A1 environment to test: `UA1Zero-v0`, `UA1Still-v0`, `UA1Slow-v0`, or `UA1Fast-v0`', default='UA1Zero-v0')
-  parser.add_argument('--render', action='store_true', help='Render in the RL loop')
+  parser.add_argument('--task', type=str, help='Move task to test: `none`, `still`, `slow`, or `fast`', default='none')
+  parser.add_argument('--render', action='store_true', help='Visualize inside the render loop')
   args = parser.parse_args()
 
-  assert args.env_id in ALL_ENVS.keys(), f"Unknown environment: {args.env_id}"
-  env_fn = ALL_ENVS[args.env_id]
+  assert args.task in ALL_GYM_ENVS.keys(), f"Unknown environment: {args.task}"
+  env_fn = ALL_GYM_ENVS[args.task]
   env = env_fn()
 
-  observation, done = env.reset(), False
+  _, done = env.reset(), False
   args.render and env.render()
   while not done:
     action = env.action_space.sample()
-    observation, reward, done, info = env.step(action)
+    _, reward, done, _ = env.step(action)
     print("reward = {}, done = {}.".format(
         reward, done))
     args.render and env.render()
