@@ -1,215 +1,106 @@
-from gym import core, spaces
-from dm_control import suite
-from dm_env import specs
+import gym
+from gym import spaces
 import numpy as np
 
-
-def _spec_to_box(spec, dtype):
-    def extract_min_max(s):
-        assert s.dtype == np.float64 or s.dtype == np.float32
-        dim = np.int(np.prod(s.shape))
-        if type(s) == specs.Array:
-            bound = np.inf * np.ones(dim, dtype=np.float32)
-            return -bound, bound
-        elif type(s) == specs.BoundedArray:
-            zeros = np.zeros(dim, dtype=np.float32)
-            return s.minimum + zeros, s.maximum + zeros
-
-    mins, maxs = [], []
-    for s in spec:
-        mn, mx = extract_min_max(s)
-        mins.append(mn)
-        maxs.append(mx)
-    low = np.concatenate(mins, axis=0).astype(dtype)
-    high = np.concatenate(maxs, axis=0).astype(dtype)
-    assert low.shape == high.shape
-    return spaces.Box(low, high, dtype=dtype)
+from dm_control import suite
+from dm_env import specs
+from task import ALL_TASKS
 
 
-def _flatten_obs(obs):
-    obs_pieces = []
-    for v in obs.values():
-        flat = np.array([v]) if np.isscalar(v) else v.ravel()
-        obs_pieces.append(flat)
-    return np.concatenate(obs_pieces, axis=0)
+def convert_dm_control_to_gym_space(dm_control_space):
+    r"""Convert dm_control space to gym space. """
+    if isinstance(dm_control_space, specs.BoundedArray):
+        space = spaces.Box(low=dm_control_space.minimum, 
+                           high=dm_control_space.maximum, 
+                           dtype=dm_control_space.dtype)
+        assert space.shape == dm_control_space.shape
+        return space
+    elif isinstance(dm_control_space, specs.Array) and not isinstance(dm_control_space, specs.BoundedArray):
+        space = spaces.Box(low=-float('inf'), 
+                           high=float('inf'), 
+                           shape=dm_control_space.shape, 
+                           dtype=dm_control_space.dtype)
+        return space
+    elif isinstance(dm_control_space, dict):
+        space = spaces.Dict({key: convert_dm_control_to_gym_space(value)
+                             for key, value in dm_control_space.items()})
+        return space
 
+class DMSuiteEnv(gym.Env):
+    def __init__(self, task, task_kwargs=None):
+        self.env = task(**(task_kwargs or {}))
+        self.metadata = {'render.modes': ['human', 'rgb_array'],
+                         'video.frames_per_second': round(1.0/self.env.control_timestep())}
 
-class DMCWrapper(core.Env):
-    def __init__(
-        self,
-        task_name,
-        task_kwargs=None,
-        visualize_reward={},
-        from_pixels=False,
-        height=84,
-        width=84,
-        camera_id=0,
-        frame_skip=1,
-        environment_kwargs=None,
-        channels_first=True
-    ):
-        assert 'random' in task_kwargs, 'please specify a seed, for deterministic behaviour'
-        self._from_pixels = from_pixels
-        self._height = height
-        self._width = width
-        self._camera_id = camera_id
-        self._frame_skip = frame_skip
-        self._channels_first = channels_first
-
-        # create task
-        self._env = 
-
-        # true and normalized action spaces
-        self._true_action_space = _spec_to_box([self._env.action_spec()], np.float32)
-        self._norm_action_space = spaces.Box(
-            low=-1.0,
-            high=1.0,
-            shape=self._true_action_space.shape,
-            dtype=np.float32
-        )
-
-        # create observation space
-        if from_pixels:
-            shape = [3, height, width] if channels_first else [height, width, 3]
-            self._observation_space = spaces.Box(
-                low=0, high=255, shape=shape, dtype=np.uint8
-            )
-        else:
-            self._observation_space = _spec_to_box(
-                self._env.observation_spec().values(),
-                np.float64
-            )
-            
-        self._state_space = _spec_to_box(
-            self._env.observation_spec().values(),
-            np.float64
-        )
-        
-        self.current_state = None
-
-        # set seed
-        self.seed(seed=task_kwargs.get('random', 1))
-
-    def __getattr__(self, name):
-        return getattr(self._env, name)
-
-    def _get_obs(self, time_step):
-        if self._from_pixels:
-            obs = self.render(
-                height=self._height,
-                width=self._width,
-                camera_id=self._camera_id
-            )
-            if self._channels_first:
-                obs = obs.transpose(2, 0, 1).copy()
-        else:
-            obs = _flatten_obs(time_step.observation)
-        return obs
-
-    def _convert_action(self, action):
-        action = action.astype(np.float64)
-        true_delta = self._true_action_space.high - self._true_action_space.low
-        norm_delta = self._norm_action_space.high - self._norm_action_space.low
-        action = (action - self._norm_action_space.low) / norm_delta
-        action = action * true_delta + self._true_action_space.low
-        action = action.astype(np.float32)
-        return action
-
-    @property
-    def observation_space(self):
-        return self._observation_space
-
-    @property
-    def state_space(self):
-        return self._state_space
-
-    @property
-    def action_space(self):
-        return self._norm_action_space
-
-    @property
-    def reward_range(self):
-        return 0, self._frame_skip
-
+        self.observation_space = convert_dm_control_to_gym_space(self.env.observation_spec())
+        self.action_space = convert_dm_control_to_gym_space(self.env.action_spec())
+        self.viewer = None
+    
     def seed(self, seed):
-        self._true_action_space.seed(seed)
-        self._norm_action_space.seed(seed)
-        self._observation_space.seed(seed)
-
+        return self.env.task.random.seed(seed)
+    
     def step(self, action):
-        assert self._norm_action_space.contains(action)
-        action = self._convert_action(action)
-        assert self._true_action_space.contains(action)
-        reward = 0
-        extra = {'internal_state': self._env.physics.get_state().copy()}
-
-        for _ in range(self._frame_skip):
-            time_step = self._env.step(action)
-            reward += time_step.reward or 0
-            done = time_step.last()
-            if done:
-                break
-        obs = self._get_obs(time_step)
-        self.current_state = _flatten_obs(time_step.observation)
-        extra['discount'] = time_step.discount
-        return obs, reward, done, extra
-
+        timestep = self.env.step(action)
+        observation = timestep.observation
+        reward = timestep.reward
+        done = timestep.last()
+        info = {}
+        return observation, reward, done, info
+    
     def reset(self):
-        time_step = self._env.reset()
-        self.current_state = _flatten_obs(time_step.observation)
-        obs = self._get_obs(time_step)
-        return obs
+        timestep = self.env.reset()
+        return timestep.observation
+    
+    def render(self, mode='human', **kwargs):
+        if 'camera_id' not in kwargs:
+            kwargs['camera_id'] = 0  # Tracking camera
+        use_opencv_renderer = kwargs.pop('use_opencv_renderer', True)
+        
+        img = self.env.physics.render(**kwargs)
+        if mode == 'rgb_array':
+            return img
+        elif mode == 'human':
+            if self.viewer is None:
+                if not use_opencv_renderer:
+                    from gym.envs.classic_control import rendering
+                    self.viewer = rendering.SimpleImageViewer(maxwidth=1024)
+                else:
+                    from utils import OpenCVImageViewer
+                    self.viewer = OpenCVImageViewer()
+            self.viewer.imshow(img)
+            return self.viewer.isopen
+        else:
+            raise NotImplementedError
 
-    def render(self, mode='rgb_array', height=None, width=None, camera_id=0):
-        assert mode == 'rgb_array', 'only support rgb_array mode, given %s' % mode
-        height = height or self._height
-        width = width or self._width
-        camera_id = camera_id or self._camera_id
-        return self._env.physics.render(
-            height=height, width=width, camera_id=camera_id
-        )
+    def close(self):
+        if self.viewer is not None:
+            self.viewer.close()
+            self.viewer = None
+        return self.env.close()
+
+ALL_ENVS = {}
+for name, task in ALL_TASKS.items():
+    ALL_ENVS[f'UA1{name.capitalize()}-v0'] = lambda **kwargs: DMSuiteEnv(task, **kwargs)
 
 def main():
   import argparse
-  parser = argparse.ArgumentParser(description='Test a given task.')
-  parser.add_argument('task', type=str, help='Task to test: `walk`, `run`, or `standup`', default='standup')
-  parser.add_argument('--visualize', action='store_true', help='Visualize at the end if set')
+  parser = argparse.ArgumentParser(description='Test a given environment.')
+  parser.add_argument('--env_id', type=str, help='Unitree A1 environment to test: `UA1Zero-v0`, `UA1Still-v0`, `UA1Slow-v0`, or `UA1Fast-v0`', default='UA1Zero-v0')
+  parser.add_argument('--render', action='store_true', help='Render in the RL loop')
   args = parser.parse_args()
 
-  env_fn = None
-  if args.task.lower() == 'walk':
-    env_fn = walk
-  elif args.task.lower() == 'run':
-    env_fn = run
-  elif args.task.lower() == 'standup':
-    env_fn = standup
-  else:
-    NotImplementedError(f"Unknown task: {args.task}")
-
+  assert args.env_id in ALL_ENVS.keys(), f"Unknown environment: {args.env_id}"
+  env_fn = ALL_ENVS[args.env_id]
   env = env_fn()
-  action_spec = env.action_spec()
-  min_action = action_spec.minimum
-  max_action = action_spec.maximum
-  def random_policy(_):
-    return np.random.uniform(
-      min_action,
-      max_action
-    )
 
-  time_step = env.reset()
-  while not time_step.last():
-    action = np.random.uniform(action_spec.minimum, action_spec.maximum,
-                              size=action_spec.shape)
-    time_step = env.step(action)
-    # print("reward = {}, discount = {}, observations = {}.".format(
-    #     time_step.reward, time_step.discount, time_step.observation))
-    print("reward = {}, discount = {}.".format(
-        time_step.reward, time_step.discount))
-
-  if args.visualize:
-    del env
-    from dm_control import viewer
-    viewer.launch(environment_loader=env_fn, policy=random_policy)
+  observation, done = env.reset(), False
+  args.render and env.render()
+  while not done:
+    action = env.action_space.sample()
+    observation, reward, done, info = env.step(action)
+    print("reward = {}, done = {}.".format(
+        reward, done))
+    args.render and env.render()
 
 if __name__ == "__main__":
   main()

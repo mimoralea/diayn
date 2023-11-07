@@ -149,11 +149,8 @@ def main():
 
   time_step = env.reset()
   while not time_step.last():
-    action = np.random.uniform(action_spec.minimum, action_spec.maximum,
-                              size=action_spec.shape)
+    action = random_policy(time_step)
     time_step = env.step(action)
-    # print("reward = {}, discount = {}, observations = {}.".format(
-    #     time_step.reward, time_step.discount, time_step.observation))
     print("reward = {}, discount = {}.".format(
         time_step.reward, time_step.discount))
 

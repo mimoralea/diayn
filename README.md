@@ -59,5 +59,6 @@ which simulate
 pip install dm_control==1.0.15
 pip install pip==22.0.4 setuptools==59.8.0 wheel==0.37.1
 pip install gym==0.21
+pip install "opencv-python>=3"
 ```
 

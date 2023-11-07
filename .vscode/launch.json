@@ -20,9 +20,21 @@
             "request": "launch",
             "program": "diayn/task.py",
             // "args": [
-            //     "zero", // "zero", "still", "slow", or "fast"
+            //     "--task", "zero", // "zero", "still", "slow", or "fast"
             //     // "--visualize"
             // ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Environment",
+            "type": "python",
+            "request": "launch",
+            "program": "diayn/environment.py",
+            "args": [
+                "--env_id", "UA1Zero-v0", // "UA1Zero-v0", "UA1Still-v0", "UA1Slow-v0", or "UA1Fast-v0"
+                "--render"
+            ],
             "console": "integratedTerminal",
             "justMyCode": false
         }
