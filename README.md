@@ -51,6 +51,15 @@ tar xvf mujoco-3.0.0-linux-x86_64.tar.gz
 mv mujoco-3.0.0 ~/.mujoco/mujoco300
 rm mujoco-3.0.0-linux-x86_64.tar.gz 
 conda env config vars set PATH=$PATH:/home/mimoralea/.mujoco/mujoco300/bin
+conda env config vars set PATH=$PATH:/home/mimoralea/.mujoco/mujoco200/bin
+conda env config vars set MUJOCO_GL=egl PYOPENGL_PLATFORM=egl
+conda env config vars set MJLIB_PATH=/home/mimoralea/.mujoco/mujoco200/bin/libmujoco200.so \
+ LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/mimoralea/.mujoco/mujoco200/bin \
+ MUJOCO_PY_MUJOCO_PATH=/home/mimoralea/.mujoco/mujoco200
+# For versions < 2.1.0, we must link the key too
+conda env config vars set MUJOCO_PY_MJKEY_PATH=/home/mimoralea/.mujoco/mjkey.txt
+ENV_MJLIB_PATH
+# OMPI_MCA_opal_cuda_support=true
 conda deactivate && conda activate diayn
 which simulate
 ```
@@ -64,4 +73,6 @@ pip install -e .
 python3 -m pip install --upgrade https://storage.googleapis.com/tensorflow/mac/cpu/tensorflow-1.12.0-py3-none-any.whl
 pip install joblib
 mamba install mpi4py
+mamba install pandas seaborn=0.8.1 matplotlib
+pip install dm_control==1.0.13 # for python 3.7
 ```

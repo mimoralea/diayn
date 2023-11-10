@@ -1,7 +1,7 @@
 import numpy as np
 from dm_control.rl import control
 from diayn.physics import Physics
-from diayn.task import TASK_TYPE_TO_MOVE_SPEED, Move
+from diayn.task import TASK_TO_SPEED, Move
 from diayn.utils import get_model_and_assets
 
 
@@ -28,7 +28,7 @@ def _dmc_env_creator(
 
 
 ALL_DMC_ENVS = {}
-for task_type in TASK_TYPE_TO_MOVE_SPEED:
+for task_type in TASK_TO_SPEED:
     ALL_DMC_ENVS[task_type] = lambda tt=task_type: _dmc_env_creator(tt)
 
 

@@ -1,6 +1,8 @@
 import gym
 from dm_env import specs
 from diayn.environments.ua1_dmc import ALL_DMC_ENVS
+from diayn.utils import OpenCVImageViewer
+
 
 
 def convert_dm_control_to_gym_space(dm_control_space):
@@ -69,25 +71,13 @@ class DMSuiteEnv(gym.Env):
     def render(self, mode="human", **kwargs):
         if "camera_id" not in kwargs:
             kwargs["camera_id"] = 0  # Tracking camera
-        use_opencv_renderer = kwargs.pop("use_opencv_renderer", True)
 
         img = self.env.physics.render(**kwargs)
-        if mode == "rgb_array":
-            return img
-        elif mode == "human":
-            if self.viewer is None:
-                if not use_opencv_renderer:
-                    from gym.envs.classic_control import rendering
+        if self.viewer is None:
+            self.viewer = OpenCVImageViewer()
 
-                    self.viewer = rendering.SimpleImageViewer(maxwidth=1024)
-                else:
-                    from diayn.utils import OpenCVImageViewer
-
-                    self.viewer = OpenCVImageViewer()
-            self.viewer.imshow(img)
-            return self.viewer.isopen
-        else:
-            raise NotImplementedError
+        self.viewer.imshow(img)
+        return self.viewer.isopen
 
     def close(self):
         if self.viewer is not None:

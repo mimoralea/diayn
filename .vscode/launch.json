@@ -4,16 +4,40 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+        // python diayn/spinningup/spinup/utils/test_policy.py data/UA1Fast-v0/sac/sac_s84/
         {
-            "name": "Main",
+            "name": "Test Policy",
+            "type": "python",
+            "request": "launch",
+            "program": "diayn/spinningup/spinup/utils/test_policy.py",
+            "args": [
+                "data/quadruped/sac/sac_s99",
+                // "data/UA1Fast-v0/sac/sac_s84",
+                // "--env_id", "UA1None-v0",
+                // "--env_id", "UA1Still-v0",
+                // "--env_id", "UA1Slow-v0",
+                // "--env_id", "UA1Fast-v0",
+                // "--domain_name", "walker", "--task_name", "walk",
+                "--domain_name", "quadruped", "--task_name", "walk",
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            // lambda: gym.make(args.env_id),
+            // lambda: dmc2gym.make(domain_name='walker', task_name='walk', seed=1),
+            // lambda: dmc2gym.make(domain_name='quadruped', task_name='walk', seed=1),
+            "name": "Main SAC",
             "type": "python",
             "request": "launch",
             "program": "diayn/main.py",
             "args": [
                 // "--env_id", "UA1None-v0",
-                // "--env_id", "UA1Still-v0",
-                "--env_id", "UA1Slow-v0",
+                "--env_id", "UA1Still-v0",
+                // "--env_id", "UA1Slow-v0",
                 // "--env_id", "UA1Fast-v0",
+                // "--domain_name", "walker", "--task_name", "walk",
+                // "--domain_name", "quadruped", "--task_name", "walk",
             ],
             "console": "integratedTerminal",
             "justMyCode": false
@@ -24,8 +48,8 @@
             "request": "launch",
             "program": "diayn/environments/ua1_dmc.py",
             "args": [
-                "--task", "fast", // "none", "still", "slow", or "fast"
-                "--render"
+                "--task", "slow", // "none", "still", "slow", or "fast"
+                // "--render"
             ],
             "console": "integratedTerminal",
             "justMyCode": false
@@ -36,7 +60,7 @@
             "request": "launch",
             "program": "diayn/environments/ua1_gym.py",
             "args": [
-                "--task", "fast", // "none", "still", "slow", or "fast"
+                "--task", "slow", // "none", "still", "slow", or "fast"
                 "--render"
             ],
             "console": "integratedTerminal",
