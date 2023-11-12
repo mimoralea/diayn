@@ -4,18 +4,31 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-        // python diayn/spinningup/spinup/utils/test_policy.py data/UA1Fast-v0/sac/sac_s84/
         {
+            // python diayn/spinningup/spinup/utils/test_policy.py data/UA1Fast-v0/sac/sac_s84/
             "name": "Test Policy",
             "type": "python",
             "request": "launch",
             "program": "diayn/spinningup/spinup/utils/test_policy.py",
             "args": [
-                "data/UA1Still-v0/sac/sac_s4", "--env_id", "UA1Still-v0",
+                // "data/UA1Still-v0/sac/sac_s4", "--env_id", "UA1Still-v0",
                 // "data/UA1Slow-v0/sac/sac_s0", "--env_id", "UA1Slow-v0",
                 // "data/UA1Fast-v0/sac/sac_s0", "--env_id", "UA1Fast-v0",
                 // "data/quadruped/sac/sac_s0", "--domain_name", "quadruped", "--task_name", "walk",
                 // "data/dog_stand/sac/sac_s0", "--domain_name", "dog", "--task_name", "stand",
+                "data/UA1None-v0/diayn/diayn_s0", "--env_id", "UA1None-v0", "--skill", "19"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            // python diayn/spinningup/spinup/utils/plot.py data/UA1None-v0/diayn/diayn_s0 -y DiProbS
+            "name": "Plot Vals",
+            "type": "python",
+            "request": "launch",
+            "program": "diayn/spinningup/spinup/utils/plot.py",
+            "args": [
+                "data/UA1None-v0/diayn/diayn_s0", "-y", "DiProbsS"
             ],
             "console": "integratedTerminal",
             "justMyCode": false
@@ -45,12 +58,13 @@
             "request": "launch",
             "program": "diayn/main_diayn.py",
             "args": [
-                "--env_id", "UA1None-v0",
-                // "--env_id", "UA1Still-v0",
+                // "--env_id", "UA1None-v0",
+                "--env_id", "UA1Still-v0", "--n_skill", "50",
                 // "--env_id", "UA1Slow-v0",
                 // "--env_id", "UA1Fast-v0",
                 // "--domain_name", "walker", "--task_name", "walk",
                 // "--domain_name", "quadruped", "--task_name", "walk",
+                "--seed", "9999", // so that it doesn't overwrite other training runs
             ],
             "console": "integratedTerminal",
             "justMyCode": false

@@ -5,6 +5,8 @@ import os.path as osp
 
 # import tensorflow as tf
 import torch
+import json
+import numpy as np
 from diayn.spinningup.spinup.utils.logx import EpochLogger
 import gym
 import dmc2gym
@@ -12,7 +14,7 @@ import dmc2gym
 # from diayn.spinningup.spinup.utils.logx import restore_tf_graph
 
 
-def load_policy_and_env(fpath, itr="last", deterministic=False):
+def load_policy_and_env(fpath, itr="last", skill=None, deterministic=False):
     """
     Load a policy from save, whether it's TF or PyTorch, along with RL env.
 
@@ -58,11 +60,19 @@ def load_policy_and_env(fpath, itr="last", deterministic=False):
         ), "Bad value provided for itr (needs to be int or 'last')."
         itr = "%d" % itr
 
+    if skill is not None:
+        fname = osp.join(fpath, "config.json")
+        with open(fname) as f:
+            d = json.load(f)
+            n_skill = d["n_skill"]
+            assert skill < n_skill, f"Total skills {n_skill}, but asked for {skill}"
+            skill = np.eye(n_skill, k=skill)[0]
+
     # load the get_action function
     if backend == "tf1":
         get_action = load_tf_policy(fpath, itr, deterministic)
     else:
-        get_action = load_pytorch_policy(fpath, itr, deterministic)
+        get_action = load_pytorch_policy(fpath, itr, skill, deterministic)
 
     # try to load environment from save
     # (sometimes this will fail because the environment could not be pickled)
@@ -101,20 +111,28 @@ def load_tf_policy(fpath, itr, deterministic=False):
     return get_action
 
 
-def load_pytorch_policy(fpath, itr, deterministic=False):
+def load_pytorch_policy(fpath, itr, skill=None, deterministic=False):
     """Load a pytorch policy saved with Spinning Up Logger."""
 
     fname = osp.join(fpath, "pyt_save", "model" + itr + ".pt")
     print("\n\nLoading from %s.\n\n" % fname)
 
     model = torch.load(fname)
-
-    # make function for producing an action given a single state
-    def get_action(x):
-        with torch.no_grad():
-            x = torch.as_tensor(x, dtype=torch.float32)
-            action = model.act(x)
-        return action
+    
+    if skill is not None:
+        def get_action(x):
+            with torch.no_grad():
+                s = torch.as_tensor(skill, dtype=torch.float32)
+                x = torch.as_tensor(x, dtype=torch.float32)
+                action = model.act(s, x)
+            return action
+    else:
+        # make function for producing an action given a single state
+        def get_action(x):
+            with torch.no_grad():
+                x = torch.as_tensor(x, dtype=torch.float32)
+                action = model.act(x)
+            return action
 
     return get_action
 
@@ -165,13 +183,14 @@ if __name__ == "__main__":
     )
     parser.add_argument("--len", "-l", type=int, default=1000)
     parser.add_argument("--episodes", "-n", type=int, default=10)
+    parser.add_argument("--skill", "-sk", type=int, default=None)
     parser.add_argument("--norender", "-nr", action="store_true")
     parser.add_argument("--itr", "-i", type=int, default=-1)
     parser.add_argument("--deterministic", "-d", action="store_true")
     parser.add_argument("--seed", "-s", type=int, default=0)
     args = parser.parse_args()
     env, get_action = load_policy_and_env(
-        args.fpath, args.itr if args.itr >= 0 else "last", args.deterministic
+        args.fpath, args.itr if args.itr >= 0 else "last", args.skill, args.deterministic
     )
     if not env:
         assert args.env_id or (

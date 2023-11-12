@@ -27,6 +27,8 @@ if __name__ == "__main__":
     parser.add_argument("--seed", "-s", type=int, default=0)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--epochs", type=int, default=750)
+    parser.add_argument("--n_skill", type=int, default=50)
+    parser.add_argument("--intrinsic_w", type=int, default=0.5)
     parser.add_argument("--steps_per_epoch", type=int, default=4000)
     # steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99,
     # polyak=0.995, lr=1e-3, alpha=0.2, batch_size=100, start_steps=10000,
@@ -60,6 +62,8 @@ if __name__ == "__main__":
         env_fn,
         actor_critic=core.MLPActorCritic,
         ac_kwargs=dict(hidden_sizes=[args.hid] * args.l),
+        n_skill=args.n_skill,
+        intrinsic_w=args.intrinsic_w,
         gamma=args.gamma,
         seed=args.seed,
         epochs=args.epochs,
