@@ -28,15 +28,15 @@ LOG_STD_MIN = -20
 
 class SquashedGaussianMLPActor(nn.Module):
 
-    def __init__(self, obs_dim, act_dim, hidden_sizes, activation, act_limit):
+    def __init__(self, sk_dim, obs_dim, act_dim, hidden_sizes, activation, act_limit):
         super().__init__()
-        self.net = mlp([obs_dim] + list(hidden_sizes), activation, activation)
+        self.net = mlp([sk_dim + obs_dim] + list(hidden_sizes), activation, activation)
         self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.act_limit = act_limit
 
-    def forward(self, obs, deterministic=False, with_logprob=True):
-        net_out = self.net(obs)
+    def forward(self, sk, obs, deterministic=False, with_logprob=True):
+        net_out = self.net(torch.cat([sk, obs], dim=-1))
         mu = self.mu_layer(net_out)
         log_std = self.log_std_layer(net_out)
         log_std = torch.clamp(log_std, LOG_STD_MIN, LOG_STD_MAX)
@@ -69,19 +69,19 @@ class SquashedGaussianMLPActor(nn.Module):
 
 class MLPQFunction(nn.Module):
 
-    def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
+    def __init__(self, sk_dim, obs_dim, act_dim, hidden_sizes, activation):
         super().__init__()
-        self.q = mlp([obs_dim + act_dim] + list(hidden_sizes) + [1], activation)
+        self.q = mlp([sk_dim + obs_dim + act_dim] + list(hidden_sizes) + [1], activation)
 
-    def forward(self, obs, act):
-        q = self.q(torch.cat([obs, act], dim=-1))
+    def forward(self, sk, obs, act):
+        q = self.q(torch.cat([sk, obs, act], dim=-1))
         return torch.squeeze(q, -1) # Critical to ensure q has right shape.
 
 class MLPDiscriminator(nn.Module):
 
-    def __init__(self, obs_dim, n_skills, hidden_sizes, activation):
+    def __init__(self, obs_dim, sk_dim, hidden_sizes, activation):
         super().__init__()
-        self.di = mlp([obs_dim] + list(hidden_sizes) + [n_skills], activation)
+        self.di = mlp([obs_dim] + list(hidden_sizes) + [sk_dim], activation)
 
     def forward(self, obs):
         logits = self.di(obs, dim=-1)
@@ -90,24 +90,22 @@ class MLPDiscriminator(nn.Module):
 
 class MLPActorCritic(nn.Module):
 
-    def __init__(self, observation_space, action_space, n_skills=20, hidden_sizes=(256,256),
+    def __init__(self, observation_space, action_space, sk_dim=20, hidden_sizes=(256,256),
                  activation=nn.ReLU):
         super().__init__()
-
-        self.n_skills = n_skills
 
         obs_dim = observation_space.shape[0]
         act_dim = action_space.shape[0]
         act_limit = action_space.high[0]
 
         # build policy and value functions
-        self.pi = SquashedGaussianMLPActor(obs_dim + n_skills, act_dim, hidden_sizes, activation, act_limit)
-        self.q1 = MLPQFunction(obs_dim + n_skills, act_dim, hidden_sizes, activation)
-        self.q2 = MLPQFunction(obs_dim + n_skills, act_dim, hidden_sizes, activation)
-        self.d1 = MLPDiscriminator(obs_dim, n_skills, hidden_sizes, activation)
-        self.d2 = MLPDiscriminator(obs_dim, n_skills, hidden_sizes, activation)
+        self.pi = SquashedGaussianMLPActor(sk_dim, obs_dim, act_dim, hidden_sizes, activation, act_limit)
+        self.q1 = MLPQFunction(sk_dim, obs_dim, act_dim, hidden_sizes, activation)
+        self.q2 = MLPQFunction(sk_dim, obs_dim, act_dim, hidden_sizes, activation)
+        self.d1 = MLPDiscriminator(obs_dim, sk_dim, hidden_sizes, activation)
+        self.d2 = MLPDiscriminator(obs_dim, sk_dim, hidden_sizes, activation)
 
-    def act(self, obs, deterministic=False):
+    def act(self, sk, obs, deterministic=False):
         with torch.no_grad():
-            a, _ = self.pi(obs, deterministic, False)
+            a, _ = self.pi(sk, obs, deterministic, False)
             return a.numpy()

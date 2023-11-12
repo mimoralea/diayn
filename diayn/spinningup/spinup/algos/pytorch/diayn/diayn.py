@@ -14,7 +14,8 @@ class ReplayBuffer:
     A simple FIFO experience replay buffer for DIAYN agents.
     """
 
-    def __init__(self, obs_dim, act_dim, size):
+    def __init__(self, sk_dim, obs_dim, act_dim, size):
+        self.sk_buf = np.zeros(core.combined_shape(size, sk_dim), dtype=np.float32)
         self.obs_buf = np.zeros(core.combined_shape(size, obs_dim), dtype=np.float32)
         self.obs2_buf = np.zeros(core.combined_shape(size, obs_dim), dtype=np.float32)
         self.act_buf = np.zeros(core.combined_shape(size, act_dim), dtype=np.float32)
@@ -22,7 +23,8 @@ class ReplayBuffer:
         self.done_buf = np.zeros(size, dtype=np.float32)
         self.ptr, self.size, self.max_size = 0, 0, size
 
-    def store(self, obs, act, rew, next_obs, done):
+    def store(self, sk, obs, act, rew, next_obs, done):
+        self.sk_buf[self.ptr] = sk
         self.obs_buf[self.ptr] = obs
         self.obs2_buf[self.ptr] = next_obs
         self.act_buf[self.ptr] = act
@@ -34,6 +36,7 @@ class ReplayBuffer:
     def sample_batch(self, batch_size=32):
         idxs = np.random.randint(0, self.size, size=batch_size)
         batch = dict(
+            sk=self.sk_buf[idxs],
             obs=self.obs_buf[idxs],
             obs2=self.obs2_buf[idxs],
             act=self.act_buf[idxs],
@@ -180,15 +183,19 @@ def diayn(
     ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
     ac_targ = deepcopy(ac)
 
+    # Helper function to get a one-hot encoded skill vector
+    g_sk = lambda n: np.eye(n, k=np.random.randint(n))[0]
+
     # Freeze target networks with respect to optimizers (only update via polyak averaging)
     for p in ac_targ.parameters():
         p.requires_grad = False
 
     # List of parameters for both Q-networks (save this for convenience)
     q_params = itertools.chain(ac.q1.parameters(), ac.q2.parameters())
+    d_params = itertools.chain(ac.d1.parameters(), ac.d2.parameters())
 
     # Experience buffer
-    replay_buffer = ReplayBuffer(obs_dim=obs_dim, act_dim=act_dim, size=replay_size)
+    replay_buffer = ReplayBuffer(sk_dim=n_skill, obs_dim=obs_dim, act_dim=act_dim, size=replay_size)
 
     # Count variables (protip: try to get a feel for how different size networks behave!)
     var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.q1, ac.q2])
@@ -196,7 +203,8 @@ def diayn(
 
     # Set up function for computing SAC Q-losses
     def compute_loss_q(data):
-        o, a, r, o2, d = (
+        s, o, a, r, o2, d = (
+            data["sk"],
             data["obs"],
             data["act"],
             data["rew"],
@@ -204,17 +212,17 @@ def diayn(
             data["done"],
         )
 
-        q1 = ac.q1(o, a)
-        q2 = ac.q2(o, a)
+        q1 = ac.q1(s, o, a)
+        q2 = ac.q2(s, o, a)
 
         # Bellman backup for Q functions
         with torch.no_grad():
             # Target actions come from *current* policy
-            a2, logp_a2 = ac.pi(o2)
+            a2, logp_a2 = ac.pi(s, o2)
 
             # Target Q-values
-            q1_pi_targ = ac_targ.q1(o2, a2)
-            q2_pi_targ = ac_targ.q2(o2, a2)
+            q1_pi_targ = ac_targ.q1(s, o2, a2)
+            q2_pi_targ = ac_targ.q2(s, o2, a2)
             q_pi_targ = torch.min(q1_pi_targ, q2_pi_targ)
             backup = r + gamma * (1 - d) * (q_pi_targ - alpha * logp_a2)
 
@@ -230,10 +238,11 @@ def diayn(
 
     # Set up function for computing SAC pi loss
     def compute_loss_pi(data):
+        s = data["sk"]
         o = data["obs"]
-        pi, logp_pi = ac.pi(o)
-        q1_pi = ac.q1(o, pi)
-        q2_pi = ac.q2(o, pi)
+        pi, logp_pi = ac.pi(s, o)
+        q1_pi = ac.q1(s, o, pi)
+        q2_pi = ac.q2(s, o, pi)
         q_pi = torch.min(q1_pi, q2_pi)
 
         # Entropy-regularized policy loss
@@ -247,6 +256,7 @@ def diayn(
     # Set up optimizers for policy and q-function
     pi_optimizer = Adam(ac.pi.parameters(), lr=lr)
     q_optimizer = Adam(q_params, lr=lr)
+    d_optimizer = Adam(d_params, lr=lr)
 
     # Set up model saving
     logger.setup_pytorch_saver(ac)
@@ -287,15 +297,19 @@ def diayn(
                 p_targ.data.mul_(polyak)
                 p_targ.data.add_((1 - polyak) * p.data)
 
-    def get_action(o, deterministic=False):
-        return ac.act(torch.as_tensor(o, dtype=torch.float32), deterministic)
+    def get_action(s, o, deterministic=False):
+        return ac.act(
+            torch.as_tensor(s, dtype=torch.float32),
+            torch.as_tensor(o, dtype=torch.float32), 
+            deterministic
+        )
 
     def test_agent():
         for j in range(num_test_episodes):
-            o, d, ep_ret, ep_len = test_env.reset(), False, 0, 0
+            sk, o, d, ep_ret, ep_iret, ep_len = g_sk(n_skill), test_env.reset(), False, 0, 0, 0
             while not (d or (ep_len == max_ep_len)):
                 # Take deterministic actions at test time
-                o, r, d, _ = test_env.step(get_action(o, True))
+                o, r, d, _ = test_env.step(get_action(sk, o, True))
                 ep_ret += r
                 ep_len += 1
             logger.store(TestEpRet=ep_ret, TestEpLen=ep_len)
@@ -303,7 +317,7 @@ def diayn(
     # Prepare for interaction with environment
     total_steps = steps_per_epoch * epochs
     start_time = time.time()
-    si, o, ep_ret, ep_len = np.randint(n_skill), env.reset(), 0, 0
+    sk, o, ep_ret, ep_iret, ep_len = g_sk(n_skill), env.reset(), 0, 0, 0
 
     # Main loop: collect experience in env and update/log each epoch
     for t in range(total_steps):
@@ -311,7 +325,7 @@ def diayn(
         # from a uniform distribution for better exploration. Afterwards,
         # use the learned policy.
         if t > start_steps:
-            a = get_action(o)
+            a = get_action(sk, o)
         else:
             a = env.action_space.sample()
 
@@ -326,7 +340,7 @@ def diayn(
         d = False if ep_len == max_ep_len else d
 
         # Store experience to replay buffer
-        replay_buffer.store(o, a, r, o2, d)
+        replay_buffer.store(sk, o, a, r, o2, d)
 
         # Super critical, easy to overlook step: make sure to update
         # most recent observation!
@@ -335,7 +349,7 @@ def diayn(
         # End of trajectory handling
         if d or (ep_len == max_ep_len):
             logger.store(EpRet=ep_ret, EpLen=ep_len)
-            o, ep_ret, ep_len = env.reset(), 0, 0
+            sk, o, ep_ret, ep_iret, ep_len = g_sk(n_skill), env.reset(), 0, 0, 0
 
         # Update handling
         if t >= update_after and t % update_every == 0:
