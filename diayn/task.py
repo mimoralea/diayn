@@ -44,14 +44,16 @@ class Move(base.Task):
             bounds=(_TARGET_HEIGHT, float("inf")),
             margin=_TARGET_HEIGHT / 2,
         )
-        upright = rewards.tolerance(
-            physics.trunk_upright(),
-            bounds=(0.9, float("inf")),
-            sigmoid="linear",
-            margin=0.8,
-            value_at_margin=0,
-        )
-        stand_reward = (9 * standing + upright) / 10
+        # upright = rewards.tolerance(
+        #     physics.trunk_upright(),
+        #     bounds=(0.9, float("inf")),
+        #     sigmoid="linear",
+        #     margin=0.8,
+        #     value_at_margin=0,
+        # )
+        # stand_reward = (9 * standing + upright) / 10
+        if self._target_speed == 0:
+            return standing
 
         if self._target_speed == 0:
             horizontal_velocity = physics.center_of_mass_velocity()[[0, 1]]
