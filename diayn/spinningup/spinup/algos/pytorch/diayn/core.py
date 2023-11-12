@@ -71,26 +71,26 @@ class MLPQFunction(nn.Module):
 
     def __init__(self, sk_dim, obs_dim, act_dim, hidden_sizes, activation):
         super().__init__()
-        self.q = mlp([sk_dim + obs_dim + act_dim] + list(hidden_sizes) + [1], activation)
+        self.net = mlp([sk_dim + obs_dim + act_dim] + list(hidden_sizes) + [1], activation)
 
     def forward(self, sk, obs, act):
-        q = self.q(torch.cat([sk, obs, act], dim=-1))
-        return torch.squeeze(q, -1) # Critical to ensure q has right shape.
+        net_out = self.net(torch.cat([sk, obs, act], dim=-1))
+        return torch.squeeze(net_out, -1) # Critical to ensure q has right shape.
 
 class MLPDiscriminator(nn.Module):
 
     def __init__(self, obs_dim, sk_dim, hidden_sizes, activation):
         super().__init__()
-        self.di = mlp([obs_dim] + list(hidden_sizes) + [sk_dim], activation)
+        self.net = mlp([obs_dim] + list(hidden_sizes) + [sk_dim], activation)
 
     def forward(self, obs):
-        logits = self.di(obs, dim=-1)
+        net_out = self.net(obs)
         # return torch.squeeze(q, -1) # Critical to ensure q has right shape.
-        return logits
+        return net_out
 
 class MLPActorCritic(nn.Module):
 
-    def __init__(self, observation_space, action_space, sk_dim=20, hidden_sizes=(256,256),
+    def __init__(self, sk_dim, observation_space, action_space, hidden_sizes=(256,256),
                  activation=nn.ReLU):
         super().__init__()
 
@@ -98,12 +98,11 @@ class MLPActorCritic(nn.Module):
         act_dim = action_space.shape[0]
         act_limit = action_space.high[0]
 
-        # build policy and value functions
+        # build discriminator, policy, and value functions
         self.pi = SquashedGaussianMLPActor(sk_dim, obs_dim, act_dim, hidden_sizes, activation, act_limit)
         self.q1 = MLPQFunction(sk_dim, obs_dim, act_dim, hidden_sizes, activation)
         self.q2 = MLPQFunction(sk_dim, obs_dim, act_dim, hidden_sizes, activation)
-        self.d1 = MLPDiscriminator(obs_dim, sk_dim, hidden_sizes, activation)
-        self.d2 = MLPDiscriminator(obs_dim, sk_dim, hidden_sizes, activation)
+        self.di = MLPDiscriminator(obs_dim, sk_dim, hidden_sizes, activation)
 
     def act(self, sk, obs, deterministic=False):
         with torch.no_grad():

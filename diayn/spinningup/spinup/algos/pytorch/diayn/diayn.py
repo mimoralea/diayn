@@ -2,12 +2,14 @@ from copy import deepcopy
 import itertools
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.optim import Adam
 import gym
 import time
 import diayn.spinningup.spinup.algos.pytorch.diayn.core as core
 from diayn.spinningup.spinup.utils.logx import EpochLogger
 
+EPS = 1E-6
 
 class ReplayBuffer:
     """
@@ -20,15 +22,17 @@ class ReplayBuffer:
         self.obs2_buf = np.zeros(core.combined_shape(size, obs_dim), dtype=np.float32)
         self.act_buf = np.zeros(core.combined_shape(size, act_dim), dtype=np.float32)
         self.rew_buf = np.zeros(size, dtype=np.float32)
+        self.irew_buf = np.zeros(size, dtype=np.float32)
         self.done_buf = np.zeros(size, dtype=np.float32)
         self.ptr, self.size, self.max_size = 0, 0, size
 
-    def store(self, sk, obs, act, rew, next_obs, done):
+    def store(self, sk, obs, act, rew, irew, next_obs, done):
         self.sk_buf[self.ptr] = sk
         self.obs_buf[self.ptr] = obs
         self.obs2_buf[self.ptr] = next_obs
         self.act_buf[self.ptr] = act
         self.rew_buf[self.ptr] = rew
+        self.irew_buf[self.ptr] = irew
         self.done_buf[self.ptr] = done
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
@@ -41,6 +45,7 @@ class ReplayBuffer:
             obs2=self.obs2_buf[idxs],
             act=self.act_buf[idxs],
             rew=self.rew_buf[idxs],
+            irew=self.irew_buf[idxs],
             done=self.done_buf[idxs],
         )
         return {k: torch.as_tensor(v, dtype=torch.float32) for k, v in batch.items()}
@@ -180,7 +185,7 @@ def diayn(
     act_limit = env.action_space.high[0]
 
     # Create actor-critic module and target networks
-    ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
+    ac = actor_critic(n_skill, env.observation_space, env.action_space, **ac_kwargs)
     ac_targ = deepcopy(ac)
 
     # Helper function to get a one-hot encoded skill vector
@@ -192,7 +197,6 @@ def diayn(
 
     # List of parameters for both Q-networks (save this for convenience)
     q_params = itertools.chain(ac.q1.parameters(), ac.q2.parameters())
-    d_params = itertools.chain(ac.d1.parameters(), ac.d2.parameters())
 
     # Experience buffer
     replay_buffer = ReplayBuffer(sk_dim=n_skill, obs_dim=obs_dim, act_dim=act_dim, size=replay_size)
@@ -201,13 +205,32 @@ def diayn(
     var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.q1, ac.q2])
     logger.log("\nNumber of parameters: \t pi: %d, \t q1: %d, \t q2: %d\n" % var_counts)
 
+    def compute_intrinsic_reward(s, o):
+        assert len(s.shape) == len(o.shape) == 1, "Function can't handle batches"
+
+        # Convert to tensors
+        s = torch.as_tensor(s, dtype=torch.float32)
+        o = torch.as_tensor(o, dtype=torch.float32)
+
+        # Get logits from discriminator net
+        d = ac_targ.di(o)
+
+        # Convert to probs
+        p_s = max(d.softmax(0)[s.argmax()], EPS)
+
+        # Calculate intrinsic reward
+        i_r = np.log(p_s) + np.log(n_skill)
+
+        return i_r.item()
+
     # Set up function for computing SAC Q-losses
     def compute_loss_q(data):
-        s, o, a, r, o2, d = (
+        s, o, a, r, ir, o2, d = (
             data["sk"],
             data["obs"],
             data["act"],
             data["rew"],
+            data["irew"],
             data["obs2"],
             data["done"],
         )
@@ -224,7 +247,8 @@ def diayn(
             q1_pi_targ = ac_targ.q1(s, o2, a2)
             q2_pi_targ = ac_targ.q2(s, o2, a2)
             q_pi_targ = torch.min(q1_pi_targ, q2_pi_targ)
-            backup = r + gamma * (1 - d) * (q_pi_targ - alpha * logp_a2)
+            # backup = r + gamma * (1 - d) * (q_pi_targ - alpha * logp_a2)
+            backup = ir + gamma * (1 - d) * (q_pi_targ - alpha * logp_a2)
 
         # MSE loss against Bellman backup
         loss_q1 = ((q1 - backup) ** 2).mean()
@@ -253,10 +277,31 @@ def diayn(
 
         return loss_pi, pi_info
 
+    # Set up function for computing SAC pi loss
+    def compute_loss_d(data):
+        s = data["sk"]
+        o = data["obs"]
+        d = ac.di(o)
+
+        # Cross entropy loss for the discriminator
+        loss_d = F.cross_entropy(d, s.argmax(dim=1))
+
+        # Useful info for logging
+        sm_d = torch.softmax(d, 1)
+        s_i = s.argmax(dim=1).unsqueeze(-1)
+        p_s = sm_d.gather(dim=1, index=s_i).squeeze()
+        d_info = dict(
+            DiVals=d.detach().numpy(),
+            DiProbS=p_s.detach().numpy() # prob of actual skill
+            # DiProbs=sm_d.detach().numpy(), # all probs
+        )
+
+        return loss_d, d_info        
+        
     # Set up optimizers for policy and q-function
+    di_optimizer = Adam(ac.di.parameters(), lr=lr)
     pi_optimizer = Adam(ac.pi.parameters(), lr=lr)
     q_optimizer = Adam(q_params, lr=lr)
-    d_optimizer = Adam(d_params, lr=lr)
 
     # Set up model saving
     logger.setup_pytorch_saver(ac)
@@ -281,6 +326,12 @@ def diayn(
         loss_pi, pi_info = compute_loss_pi(data)
         loss_pi.backward()
         pi_optimizer.step()
+        
+        # Next run on gradient descent step for the discriminator
+        di_optimizer.zero_grad()
+        loss_di, di_info = compute_loss_d(data)
+        loss_di.backward()
+        di_optimizer.step()
 
         # Unfreeze Q-networks so you can optimize it at next DDPG step.
         for p in q_params:
@@ -288,6 +339,7 @@ def diayn(
 
         # Record things
         logger.store(LossPi=loss_pi.item(), **pi_info)
+        logger.store(LossDi=loss_di.item(), **di_info)
 
         # Finally, update target networks by polyak averaging.
         with torch.no_grad():
@@ -309,10 +361,13 @@ def diayn(
             sk, o, d, ep_ret, ep_iret, ep_len = g_sk(n_skill), test_env.reset(), False, 0, 0, 0
             while not (d or (ep_len == max_ep_len)):
                 # Take deterministic actions at test time
+                ir = compute_intrinsic_reward(sk, o)
                 o, r, d, _ = test_env.step(get_action(sk, o, True))
+                ep_iret += ir
                 ep_ret += r
                 ep_len += 1
-            logger.store(TestEpRet=ep_ret, TestEpLen=ep_len)
+            logger.store(
+                TestEpIRet=ep_iret, TestEpRet=ep_ret, TestEpLen=ep_len)
 
     # Prepare for interaction with environment
     total_steps = steps_per_epoch * epochs
@@ -331,6 +386,8 @@ def diayn(
 
         # Step the env
         o2, r, d, _ = env.step(a)
+        ir = compute_intrinsic_reward(sk, o)
+        ep_iret += ir
         ep_ret += r
         ep_len += 1
 
@@ -340,7 +397,7 @@ def diayn(
         d = False if ep_len == max_ep_len else d
 
         # Store experience to replay buffer
-        replay_buffer.store(sk, o, a, r, o2, d)
+        replay_buffer.store(sk, o, a, r, ir, o2, d)
 
         # Super critical, easy to overlook step: make sure to update
         # most recent observation!
@@ -348,7 +405,7 @@ def diayn(
 
         # End of trajectory handling
         if d or (ep_len == max_ep_len):
-            logger.store(EpRet=ep_ret, EpLen=ep_len)
+            logger.store(EpIRet=ep_iret, EpRet=ep_ret, EpLen=ep_len)
             sk, o, ep_ret, ep_iret, ep_len = g_sk(n_skill), env.reset(), 0, 0, 0
 
         # Update handling
@@ -371,15 +428,20 @@ def diayn(
             # Log info about epoch
             logger.log_tabular("Epoch", epoch)
             logger.log_tabular("EpRet", with_min_and_max=True)
+            logger.log_tabular("EpIRet", with_min_and_max=True)
             logger.log_tabular("TestEpRet", with_min_and_max=True)
+            logger.log_tabular("TestEpIRet", with_min_and_max=True)
             logger.log_tabular("EpLen", average_only=True)
             logger.log_tabular("TestEpLen", average_only=True)
             logger.log_tabular("TotalEnvInteracts", t)
             logger.log_tabular("Q1Vals", with_min_and_max=True)
             logger.log_tabular("Q2Vals", with_min_and_max=True)
+            logger.log_tabular("DiVals", with_min_and_max=True)
+            logger.log_tabular("DiProbS", with_min_and_max=True)
             logger.log_tabular("LogPi", with_min_and_max=True)
             logger.log_tabular("LossPi", average_only=True)
             logger.log_tabular("LossQ", average_only=True)
+            logger.log_tabular("LossDi", average_only=True)
             logger.log_tabular("Time", time.time() - start_time)
             logger.dump_tabular()
 
