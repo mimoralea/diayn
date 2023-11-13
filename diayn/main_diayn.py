@@ -26,7 +26,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--seed", "-s", type=int, default=0)
     parser.add_argument("--gamma", type=float, default=0.99)
-    parser.add_argument("--epochs", type=int, default=750)
+    parser.add_argument("--epochs", type=int, default=2500) # 2_500 * 4_000 => 10_000_000 total steps
     parser.add_argument("--n_skill", type=int, default=50)
     parser.add_argument("--intrinsic_w", type=int, default=0.5)
     parser.add_argument("--scaling", type=bool, action='store_true')
