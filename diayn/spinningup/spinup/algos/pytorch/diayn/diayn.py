@@ -61,6 +61,7 @@ def diayn(
     seed=0,
     n_skill=20,
     intrinsic_w=0.5,
+    scaling=False,
     steps_per_epoch=4000,
     epochs=100,
     replay_size=int(1e6),
@@ -235,7 +236,7 @@ def diayn(
     def compute_weighted_reward(i, r):
         w = intrinsic_w * i
         w += (1-intrinsic_w) * r
-        return w
+        return i * r if scaling else w
 
     # Set up function for computing SAC Q-losses
     def compute_loss_q(data):
