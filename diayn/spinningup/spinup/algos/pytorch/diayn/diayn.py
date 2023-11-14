@@ -60,10 +60,9 @@ def diayn(
     ac_kwargs=dict(),
     seed=0,
     n_skill=20,
-    intrinsic_w=0.5,
-    task_multiplier=1.0,
-    scaling=False,
-    log_intrinsic=False,
+    task_threashold=0.7,
+    task_multiplier=2.0,
+    intrinsic_multiplier=5.0,
     steps_per_epoch=4000,
     epochs=100,
     replay_size=int(1e6),
@@ -215,9 +214,11 @@ def diayn(
     logger.log("\nNumber of parameters: \t pi: %d, \t q1: %d, \t q2: %d\n" % var_counts)
 
     # check right values
-    assert 0 <= intrinsic_w <= 1, f"Intrinsic ratio must be 0...1, got {intrinsic_w}"
-    
-    def compute_intrinsic_reward(s, o):
+    assert 0 <= task_threashold <= 1, f"Task threshold must be 0...1, got {task_threashold}"
+    assert 1 <= task_multiplier <= 10, f"Task multiplier must be 1...10, got {task_multiplier}"
+    assert 2 <= intrinsic_multiplier <= 10, f"Intrinsic multiplier must be 2...10, got {intrinsic_multiplier}"
+
+    def get_discriminator_confidence(s, o):
         assert len(s.shape) == len(o.shape) == 1, "Function can't handle batches"
 
         # Convert to tensors
@@ -230,23 +231,25 @@ def diayn(
         # Convert to probs
         p_s = max(d.softmax(0)[s.argmax()], EPS)
 
-        # Calculate intrinsic reward
-        i_r = np.log(p_s) + np.log(n_skill) if log_intrinsic else p_s
-        return i_r.item()
+        # Disc probability of skill
+        return p_s.item()
 
-    def compute_weighted_reward(i, r):
-        if i < 0:
-            return i
+    def compute_weighted_reward(dc, tp):
 
-        if r < 0:
-            return r
+        # task reward is task prob times a multiplier
+        tr = tp * task_multiplier # 0...2
+        if tp < task_threashold:
+            # only increase the reward after
+            # agent dominates task
+            return tr
 
-        if scaling:
-            return i * r
+        # intrinsic multiplier based on discriminator confidence
+        # (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
+        im = dc  * (intrinsic_multiplier - 1) + 1 # 1...5
 
-        w = intrinsic_w * i
-        w += (1-intrinsic_w) * r
-        return w
+        # augment the reward based on the discriminator confidence
+        # only after agent dominates task
+        return tr * im # 0...10
 
     # Set up function for computing SAC Q-losses
     def compute_loss_q(data):
@@ -388,12 +391,11 @@ def diayn(
             sk, o, d, ep_ret, ep_iret, ep_wret, ep_len = g_sk(n_skill), test_env.reset(), False, 0, 0, 0, 0
             while not (d or (ep_len == max_ep_len)):
                 # Take deterministic actions at test time
-                ir = compute_intrinsic_reward(sk, o)
+                dc = get_discriminator_confidence(sk, o)
                 o, r, d, _ = test_env.step(get_action(sk, o, True))
-                r *= task_multiplier
-                wr = compute_weighted_reward(ir, r)
+                wr = compute_weighted_reward(dc, r)
                 ep_wret += wr
-                ep_iret += ir
+                ep_iret += dc
                 ep_ret += r
                 ep_len += 1
             logger.store(
@@ -417,11 +419,10 @@ def diayn(
 
         # Step the env
         o2, r, d, _ = env.step(a)
-        r *= task_multiplier
-        ir = compute_intrinsic_reward(sk, o)
-        wr = compute_weighted_reward(ir, r)
+        dc = get_discriminator_confidence(sk, o)
+        wr = compute_weighted_reward(dc, r)
         ep_wret += wr
-        ep_iret += ir
+        ep_iret += dc
         ep_ret += r
         ep_len += 1
 
@@ -431,7 +432,7 @@ def diayn(
         d = False if ep_len == max_ep_len else d
 
         # Store experience to replay buffer
-        replay_buffer.store(sk, o, a, r, ir, wr, o2, d)
+        replay_buffer.store(sk, o, a, r, dc, wr, o2, d)
 
         # Super critical, easy to overlook step: make sure to update
         # most recent observation!
