@@ -62,6 +62,7 @@ def diayn(
     n_skill=20,
     intrinsic_w=0.5,
     scaling=False,
+    log_intrinsic=False,
     steps_per_epoch=4000,
     epochs=100,
     replay_size=int(1e6),
@@ -229,8 +230,7 @@ def diayn(
         p_s = max(d.softmax(0)[s.argmax()], EPS)
 
         # Calculate intrinsic reward
-        # i_r = np.log(p_s) + np.log(n_skill)
-        i_r = p_s
+        i_r = np.log(p_s) + np.log(n_skill) if log_intrinsic else p_s
         return i_r.item()
 
     def compute_weighted_reward(i, r):

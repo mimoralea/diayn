@@ -30,6 +30,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_skill", type=int, default=20)
     parser.add_argument("--intrinsic_w", type=float, default=0.5)
     parser.add_argument("--scaling", action='store_true')
+    parser.add_argument("--log_intrinsic", action='store_true')
     parser.add_argument("--steps_per_epoch", type=int, default=4000)
     # steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99,
     # polyak=0.995, lr=1e-3, alpha=0.2, batch_size=100, start_steps=10000,
@@ -66,6 +67,7 @@ if __name__ == "__main__":
         n_skill=args.n_skill,
         intrinsic_w=args.intrinsic_w,
         scaling=args.scaling,
+        log_intrinsic=args.log_intrinsic,
         gamma=args.gamma,
         seed=args.seed,
         epochs=args.epochs,
