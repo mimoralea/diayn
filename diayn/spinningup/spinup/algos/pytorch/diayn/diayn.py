@@ -235,9 +235,18 @@ def diayn(
         return i_r.item()
 
     def compute_weighted_reward(i, r):
+        if i < 0:
+            return i
+
+        if r < 0:
+            return r
+
+        if scaling:
+            return i * r
+
         w = intrinsic_w * i
         w += (1-intrinsic_w) * r
-        return i * r if scaling else w
+        return w
 
     # Set up function for computing SAC Q-losses
     def compute_loss_q(data):
