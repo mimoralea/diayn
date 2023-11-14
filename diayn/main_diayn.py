@@ -29,6 +29,7 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=2500) # 2_500 * 4_000 => 10_000_000 total steps
     parser.add_argument("--n_skill", type=int, default=20)
     parser.add_argument("--intrinsic_w", type=float, default=0.5)
+    parser.add_argument("--task_multiplier", type=float, default=1.0)
     parser.add_argument("--scaling", action='store_true')
     parser.add_argument("--log_intrinsic", action='store_true')
     parser.add_argument("--steps_per_epoch", type=int, default=4000)
@@ -68,6 +69,7 @@ if __name__ == "__main__":
         intrinsic_w=args.intrinsic_w,
         scaling=args.scaling,
         log_intrinsic=args.log_intrinsic,
+        task_multiplier=args.task_multiplier,
         gamma=args.gamma,
         seed=args.seed,
         epochs=args.epochs,

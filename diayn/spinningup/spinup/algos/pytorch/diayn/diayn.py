@@ -61,6 +61,7 @@ def diayn(
     seed=0,
     n_skill=20,
     intrinsic_w=0.5,
+    task_multiplier=1.0,
     scaling=False,
     log_intrinsic=False,
     steps_per_epoch=4000,
@@ -380,6 +381,7 @@ def diayn(
                 # Take deterministic actions at test time
                 ir = compute_intrinsic_reward(sk, o)
                 o, r, d, _ = test_env.step(get_action(sk, o, True))
+                r *= task_multiplier
                 wr = compute_weighted_reward(ir, r)
                 ep_wret += wr
                 ep_iret += ir
@@ -406,6 +408,7 @@ def diayn(
 
         # Step the env
         o2, r, d, _ = env.step(a)
+        r *= task_multiplier
         ir = compute_intrinsic_reward(sk, o)
         wr = compute_weighted_reward(ir, r)
         ep_wret += wr
