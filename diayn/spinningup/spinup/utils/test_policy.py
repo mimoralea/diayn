@@ -10,6 +10,7 @@ import numpy as np
 from diayn.spinningup.spinup.utils.logx import EpochLogger
 import gym
 import dmc2gym
+from PIL import Image, ImageDraw, ImageFont
 
 # from diayn.spinningup.spinup.utils.logx import restore_tf_graph
 
@@ -137,7 +138,7 @@ def load_pytorch_policy(fpath, itr, skill=None, deterministic=False):
     return get_action
 
 
-def run_policy(env, get_action, max_ep_len=None, num_episodes=100, render=True):
+def run_policy(env, get_action, skill, max_ep_len=None, num_episodes=100, render=True, save_dir=None):
     # env = gym.make('UA1Still-v0')
     # env = dmc2gym.make(domain_name='walker', task_name='walk', seed=1)
     # env = dmc2gym.make(domain_name='quadruped', task_name='walk', seed=1)
@@ -150,9 +151,22 @@ def run_policy(env, get_action, max_ep_len=None, num_episodes=100, render=True):
     logger = EpochLogger()
     o, r, d, ep_ret, ep_len, n = env.reset(), 0, False, 0, 0, 0
     while n < num_episodes:
-        if render:
-            img = env.render(mode="rgb_array")
-            time.sleep(1e-3)
+        if render or save_dir:
+            img = env.render(mode=("human" if render else "rgb_array"))
+            if render:
+                time.sleep(1.5e-2)
+            if save_dir:
+                ims_path = os.path.join(save_dir, str(args.skill))
+                os.makedirs(ims_path, exist_ok=True)
+
+                im = Image.fromarray(img).convert('RGB')
+                draw = ImageDraw.Draw(im)
+                # font = ImageFont.truetype("arial.ttf", 24)
+                font = ImageFont.truetype("/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf", 28, encoding="unic")
+                draw.text((20,20), str(skill), font=font, fill=(255,255,255))
+
+                frame_fpath = os.path.join(ims_path, f"{n:02d}_{ep_len:03}.jpg")
+                im.save(frame_fpath)
 
         a = get_action(o)
         o, r, d, _ = env.step(a)
@@ -185,6 +199,7 @@ if __name__ == "__main__":
     parser.add_argument("--episodes", "-n", type=int, default=10)
     parser.add_argument("--skill", "-sk", type=int, default=None)
     parser.add_argument("--norender", "-nr", action="store_true")
+    parser.add_argument("--write", "-w", action="store_true")
     parser.add_argument("--itr", "-i", type=int, default=-1)
     parser.add_argument("--deterministic", "-d", action="store_true")
     parser.add_argument("--seed", "-s", type=int, default=0)
@@ -204,4 +219,4 @@ if __name__ == "__main__":
             )
         )
 
-    run_policy(env, get_action, args.len, args.episodes, not (args.norender))
+    run_policy(env, get_action, args.skill, args.len, args.episodes, not (args.norender), args.fpath if args.write else None)

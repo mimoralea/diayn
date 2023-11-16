@@ -16,7 +16,12 @@
                 // "data/UA1Fast-v0/sac/sac_s0", "--env_id", "UA1Fast-v0",
                 // "data/quadruped/sac/sac_s0", "--domain_name", "quadruped", "--task_name", "walk",
                 // "data/dog_stand/sac/sac_s0", "--domain_name", "dog", "--task_name", "stand",
-                "data/UA1None-v0/diayn/diayn_s0", "--env_id", "UA1None-v0", "--skill", "19"
+                // "data/UA1None-v0/diayn/diayn_s0", "--env_id", "UA1None-v0", "--skill", "0",
+                "data/UA1Still-v0/new_rew/new_rew_s0", "--env_id", "UA1Still-v0", "--norender", "--write", "--skill", "10",
+                // "data/UA1Still-v0/new_rew/new_rew_s10", "--env_id", "UA1Still-v0", "--skill", "0",
+                // "data/UA1Still-v0/new_rew/new_rew_s50", "--env_id", "UA1Still-v0", "--skill", "0",
+                // "data/UA1Still-v0/new_rew/new_rew_s84", "--env_id", "UA1Still-v0", "--skill", "0",
+                // "data/UA1Still-v0/new_rew/new_rew_s89", "--env_id", "UA1Still-v0", "--skill", "0",
             ],
             "console": "integratedTerminal",
             "justMyCode": false

@@ -73,11 +73,13 @@ class DMSuiteEnv(gym.Env):
             kwargs["camera_id"] = 0  # Tracking camera
 
         img = self.env.physics.render(**kwargs)
-        if self.viewer is None:
+        if self.viewer is None and mode=="human":
             self.viewer = OpenCVImageViewer()
 
-        self.viewer.imshow(img)
-        return self.viewer.isopen
+        if self.viewer:
+            self.viewer.imshow(img)
+
+        return img
 
     def close(self):
         if self.viewer is not None:
