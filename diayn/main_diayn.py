@@ -24,13 +24,16 @@ if __name__ == "__main__":
         "--task_name",
         type=str,
     )
+
     parser.add_argument("--seed", "-s", type=int, default=0)
     parser.add_argument("--gamma", type=float, default=0.99)
-    parser.add_argument("--epochs", type=int, default=2500) # 2_500 * 4_000 => 10_000_000 total steps
+    parser.add_argument("--epochs", type=int, default=750)
     parser.add_argument("--n_skill", type=int, default=20)
-    parser.add_argument("--task_threashold", type=float, default=0.7)
-    parser.add_argument("--task_multiplier", type=float, default=2.0)
-    parser.add_argument("--intrinsic_multiplier", type=float, default=5.0)
+    parser.add_argument("--curriculum_threshold", type=float, default=0.7)
+    parser.add_argument("--task_min", type=float, default=0.0)
+    parser.add_argument("--task_max", type=float, default=2.0)
+    parser.add_argument("--intrinsic_min", type=float, default=1.0)
+    parser.add_argument("--intrinsic_max", type=float, default=5.0)
     parser.add_argument("--steps_per_epoch", type=int, default=4000)
     # steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99,
     # polyak=0.995, lr=1e-3, alpha=0.2, batch_size=100, start_steps=10000,
@@ -65,9 +68,11 @@ if __name__ == "__main__":
         actor_critic=core.MLPActorCritic,
         ac_kwargs=dict(hidden_sizes=[args.hid] * args.l),
         n_skill=args.n_skill,
-        task_threashold=args.task_threashold,
-        task_multiplier=args.task_multiplier,
-        intrinsic_multiplier=args.intrinsic_multiplier,
+        curriculum_threshold=args.curriculum_threshold,
+        task_min=args.task_min,
+        task_max=args.task_max,
+        intrinsic_min=args.intrinsic_min,
+        intrinsic_max=args.intrinsic_max,
         gamma=args.gamma,
         seed=args.seed,
         epochs=args.epochs,

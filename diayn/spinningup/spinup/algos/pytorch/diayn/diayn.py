@@ -60,9 +60,11 @@ def diayn(
     ac_kwargs=dict(),
     seed=0,
     n_skill=20,
-    task_threashold=0.7,
-    task_multiplier=2.0,
-    intrinsic_multiplier=5.0,
+    curriculum_threshold=0.7,
+    task_min=0.0,
+    task_max=2.0,
+    intrinsic_min=1.0,
+    intrinsic_max=5.0,
     steps_per_epoch=4000,
     epochs=100,
     replay_size=int(1e6),
@@ -214,9 +216,11 @@ def diayn(
     logger.log("\nNumber of parameters: \t pi: %d, \t q1: %d, \t q2: %d\n" % var_counts)
 
     # check right values
-    assert 0 <= task_threashold <= 1, f"Task threshold must be 0...1, got {task_threashold}"
-    assert 1 <= task_multiplier <= 10, f"Task multiplier must be 1...10, got {task_multiplier}"
-    assert 2 <= intrinsic_multiplier <= 10, f"Intrinsic multiplier must be 2...10, got {intrinsic_multiplier}"
+    assert 0 <= curriculum_threshold <= 1, f"Task threshold must be 0...1, got {curriculum_threshold}"
+    assert 0 <= task_min <= 10, f"Task min must be 0...10, got {task_min}"
+    assert 0 <= task_max <= 10, f"Task max must be 0...10, got {task_max}"
+    assert 0 <= intrinsic_min <= 10, f"Intrinsic min must be 0...10, got {intrinsic_min}"
+    assert 0 <= intrinsic_max <= 10, f"Intrinsic max must be 0...10, got {intrinsic_max}"
 
     def get_discriminator_confidence(s, o):
         assert len(s.shape) == len(o.shape) == 1, "Function can't handle batches"
@@ -236,20 +240,25 @@ def diayn(
 
     def compute_weighted_reward(dc, tp):
 
-        # task reward is task prob times a multiplier
-        tr = tp * task_multiplier # 0...2
-        if tp < task_threashold:
-            # only increase the reward after
-            # agent dominates task
+        # (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
+        rescale = lambda x, min, max: x * (max - min) + min
+
+        # rescale the task reward
+        tr = rescale(tp, task_min, task_max)
+        
+        # check curriculum
+        # if per-timestep task reward is greater or equal to threshold,
+        # move to next phase of curriculum. tp: 0...1
+        if tp < curriculum_threshold:
             return tr
 
-        # intrinsic multiplier based on discriminator confidence
-        # (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
-        im = dc  * (intrinsic_multiplier - 1) + 1 # 1...5
+        # rescale the intrinsic reward
+        im = rescale(dc, intrinsic_min, intrinsic_max)
 
-        # augment the reward based on the discriminator confidence
-        # only after agent dominates task
-        return tr * im # 0...10
+        # augment the task reward (tp -> tr) based on
+        # the discriminator confidence (dc -> im)
+        # only after agent dominates task (threshold)
+        return tr * im
 
     # Set up function for computing SAC Q-losses
     def compute_loss_q(data):
