@@ -33,7 +33,7 @@
             "request": "launch",
             "program": "diayn/spinningup/spinup/utils/plot.py",
             "args": [
-                "data/UA1None-v0/diayn/diayn_s0", "-y", "DiProbsS"
+                "data/UA1None-v0/diayn/diayn_s0", "-y", "AverageEpRet", "EpWRet", "EpIRet"
             ],
             "console": "integratedTerminal",
             "justMyCode": false
