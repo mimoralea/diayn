@@ -33,7 +33,10 @@
             "request": "launch",
             "program": "diayn/spinningup/spinup/utils/plot.py",
             "args": [
-                "data/UA1None-v0/diayn/diayn_s0", "-y", "AverageEpRet", "EpWRet", "EpIRet"
+                // "data/UA1Still-v0/new_rew/", "-y", "EpRet", "EpIRet", "AverageEpWRet", // "--legend", "Weighted Return", "Task Return", "Intrinsic Return"
+                // "data/UA1Still-v0/new_rew/", "-y", "EpRet", "EpIRet",// "--legend", "Weighted Return", "Task Return", "Intrinsic Return"
+                "data/UA1Still-v0/no_task/", "-y", "EpRet", "EpIRet", "AverageEpWRet", // "--legend", "Weighted Return", "Task Return", "Intrinsic Return"
+                // "data/UA1Still-v0/no_task/", "-y", "EpRet", "EpIRet",// "--legend", "Weighted Return", "Task Return", "Intrinsic Return"
             ],
             "console": "integratedTerminal",
             "justMyCode": false

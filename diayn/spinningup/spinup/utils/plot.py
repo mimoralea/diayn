@@ -13,8 +13,10 @@ DIV_LINE_WIDTH = 50
 exp_idx = 0
 units = dict()
 matplotlib.use('TKAgg')
+colors = sns.color_palette('deep')
+np.random.seed(123)
 
-def plot_data(data, xaxis='Epoch', value="AverageEpRet", condition="Condition1", smooth=1, **kwargs):
+def plot_data(data, xaxis='Epoch', value="AverageEpRet", condition="Condition1", smooth=1, font_scale=1.5,**kwargs):
     if smooth > 1:
         """
         smooth data with moving window average.
@@ -31,34 +33,14 @@ def plot_data(data, xaxis='Epoch', value="AverageEpRet", condition="Condition1",
 
     if isinstance(data, list):
         data = pd.concat(data, ignore_index=True)
-    sns.set(style="darkgrid", font_scale=1.5)
-    sns.tsplot(data=data, time=xaxis, value=value, unit="Unit", condition=condition, ci='sd', **kwargs)
-    """
-    If you upgrade to any version of Seaborn greater than 0.8.1, switch from 
-    tsplot to lineplot replacing L29 with:
-
-        sns.lineplot(data=data, x=xaxis, y=value, hue=condition, ci='sd', **kwargs)
-
-    Changes the colorscheme and the default legend style, though.
-    """
-    plt.legend(loc='best').set_draggable(True)
-    #plt.legend(loc='upper center', ncol=3, handlelength=1,
-    #           borderaxespad=0., prop={'size': 13})
-
-    """
-    For the version of the legend used in the Spinning Up benchmarking page, 
-    swap L38 with:
-
-    plt.legend(loc='upper center', ncol=6, handlelength=1,
-               mode="expand", borderaxespad=0., prop={'size': 13})
-    """
-
+    sns.set(style="darkgrid", font_scale=font_scale)
+    # Get a random color from the list
+    color = colors[np.random.randint(len(colors))]
+    sns.tsplot(data=data, time=xaxis, value=value, color=color, unit="Unit", condition=condition, ci='sd', **kwargs)
     xscale = np.max(np.asarray(data[xaxis])) > 5e3
     if xscale:
         # Just some formatting niceness: x-axis scale in scientific notation if max x is large
         plt.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
-
-    plt.tight_layout(pad=0.5)
 
 def get_datasets(logdir, condition=None):
     """
@@ -154,15 +136,25 @@ def get_all_datasets(all_logdirs, legend=None, select=None, exclude=None):
 
 
 def make_plots(all_logdirs, legend=None, xaxis=None, values=None, count=False,  
-               font_scale=1.5, smooth=1, select=None, exclude=None, estimator='mean'):
+               font_scale=3, smooth=1, select=None, exclude=None, estimator='mean'):
     data = get_all_datasets(all_logdirs, legend, select, exclude)
     values = values if isinstance(values, list) else [values]
     condition = 'Condition2' if count else 'Condition1'
     estimator = getattr(np, estimator)      # choose what to show on main curve: mean? max? min?
+    plt.figure(figsize=(30, 20))
+    labels = []
     for value in values:
-        plt.figure()
-        plot_data(data, xaxis=xaxis, value=value, condition=condition, smooth=smooth, estimator=estimator)
-    plt.show()
+        labels.append(value)
+        plot_data(data, xaxis=xaxis, value=value, condition=condition, smooth=smooth, font_scale=font_scale, estimator=estimator)
+    plt.legend(labels, loc='best').set_draggable(True)
+    # plt.xlabel('Timesteps')
+    # plt.ylabel('Reward')
+    plt.xlabel('')
+    plt.ylabel('')
+    plt.tight_layout()
+    plt.subplots_adjust(left=0.1, bottom=0.1, right=0.9, top=0.9)
+    plt.savefig("/home/mimoralea/test3.svg")
+    # plt.show()
 
 
 def main():
